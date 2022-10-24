@@ -369,7 +369,7 @@ InternetGatewayDevice.ManagementServer.ConnectionRequestUsername,false,true,202B
 InternetGatewayDevice.ManagementServer.ParameterKey,false,false,,xsd:string
 InternetGatewayDevice.ManagementServer.Password,false,true,,xsd:string
 InternetGatewayDevice.ManagementServer.PeriodicInformEnable,false,true,true,xsd:boolean
-InternetGatewayDevice.ManagementServer.PeriodicInformInterval,false,true,300,xsd:unsignedInt
+InternetGatewayDevice.ManagementServer.PeriodicInformInterval,false,true,10,xsd:unsignedInt
 InternetGatewayDevice.ManagementServer.URL,false,true,http://192.168.1.6:7547,xsd:string
 InternetGatewayDevice.ManagementServer.Username,false,true,8KA8WA1151100043,xsd:string
 InternetGatewayDevice.ManagementServer.X_HUAWEI_SSLCertEnable,false,true,false,xsd:boolean

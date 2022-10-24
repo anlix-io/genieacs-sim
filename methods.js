@@ -21,7 +21,8 @@ const INFORM_PARAMS = [
   "Device.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.ExternalIPAddress",
   "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.ExternalIPAddress",
   "Device.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.ExternalIPAddress",
-  "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.ExternalIPAddress"
+  "InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.ExternalIPAddress",
+  "InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"
 ];
 
 
@@ -109,6 +110,15 @@ function inform(device, event, callback) {
       "SerialNumber",
       {},
       xmlParser.encodeEntities(device["InternetGatewayDevice.DeviceInfo.SerialNumber"][1])
+    );
+  }
+
+  let macAddr = "";
+  if (device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"]) {
+    macAddr = xmlUtils.node(
+      "MACAddress",
+      {},
+      xmlParser.encodeEntities(device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"][1])
     );
   }
 

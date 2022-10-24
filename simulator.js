@@ -258,7 +258,7 @@ function listenForConnectionRequests(serialNumber, acsUrlOptions, callback) {
   });
 }
 
-function start(dataModel, serialNumber, acsUrl) {
+function start(dataModel, serialNumber, macaddr, acsUrl) {
   device = dataModel;
 
   if (device["DeviceID.SerialNumber"])
@@ -267,6 +267,9 @@ function start(dataModel, serialNumber, acsUrl) {
     device["Device.DeviceInfo.SerialNumber"][1] = serialNumber;
   if (device["InternetGatewayDevice.DeviceInfo.SerialNumber"])
     device["InternetGatewayDevice.DeviceInfo.SerialNumber"][1] = serialNumber;
+
+  if (device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"])
+    device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"][1] = macaddr;
 
   let username = "";
   let password = "";
