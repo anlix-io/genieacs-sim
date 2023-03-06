@@ -2,44 +2,31 @@
 "use strict";
 
 const cluster = require("cluster");
+const pkg = require("./package.json");
+const { forkSimulations, runSimulation } = require("./src/main");
+
 
 if (!cluster.isMaster) {
-  const simulator = require("./simulator");
-  const csvParser = require("./csv-parser");
-  const fs = require("fs");
-  const path = require("path");
-
   const acsUrl = process.env["ACS_URL"];
   const dataModel = process.env["DATA_MODEL"];
   const serialNumber = process.env["SERIAL_NUMBER"];
   const macAddr = process.env["MAC_ADDR"];
-
-  let device;
-  const data = fs.readFileSync(dataModel);
-  if (path.parse(dataModel).ext.toLowerCase() === '.csv') {
-    const rows = csvParser.reduce(csvParser.parseCsv(data.toString()));
-    device = {};
-    for (const row of rows) {
-      const isObject = row["Object"] === "true";
-      let id = row["Parameter"];
-      if (isObject) id += ".";
-
-      device[id] = [row["Writable"] === "true"];
-      if (!isObject) {
-        device[id].push(row["Value"] || "");
-        if (row["Value type"] != null) device[id].push(row["Value type"]);
-      }
-    }
-  }
-  else {
-    device = JSON.parse(data);
-  }
-
-  simulator.start(device, serialNumber, macAddr, acsUrl);
-  return;
+  return runSimulation(acsUrl, dataModel, serialNumber, macAddr);
+} else {
+  cluster.on("fork", function(worker) {
+    console.log(`Simulator ${worker.env["SERIAL_NUMBER"]} started`);
+  });
+  cluster.on("exit", function(worker, code, signal) {
+    console.log(`Simulator ${worker.env["SERIAL_NUMBER"]} died (${signal || code}). Restarting in 10 seconds...`)
+    setTimeout(function() {
+      let newWorker = cluster.fork(worker.env);
+      newWorker.env = worker.env;
+    }, 10000);
+  });
 }
 
-const pkg = require("./package.json");
+
+
 
 function resolvePath(p) {
   return require("path").resolve(process.cwd(), p);
@@ -49,7 +36,7 @@ const program = require("commander")
   .version(pkg.version)
   .description(pkg.description)
   .option("-u, --acs-url [url]", "ACS URL to contact (default: http://127.0.0.1:57547/)", "http://127.0.0.1:57547/")
-  .option("-m, --data-model [filename]", "Data model template", resolvePath, "./device-C0B101-ZXHN%20H199A-ZTEYH86LCN10105-2022-10-14T170342091Z.csv")
+  .option("-m, --data-model [filename]", "Data model template", resolvePath, "./models/device-C0B101-ZXHN%20H199A-ZTEYH86LCN10105-2022-10-14T170342091Z.csv")
   .option("-p, --processes [count]", "Number of devices to simulate (default: 1)", parseFloat, 1)
   .option("-w, --wait [milliseconds]", "Waiting period between process spawning (default: 1000)", parseFloat, 1000)
   .option("-s, --serial [offset]", "Serial number offset (default: 0)", parseFloat, 0)
@@ -57,45 +44,10 @@ const program = require("commander")
 
 program.parse()
 
-if (!/^(http|https):\/\//.test(program.opts().acsUrl)) {
-  console.error("Invalid ACS URL");
-  process.exit(1);
-}
-
-cluster.on("fork", function(worker) {
-  console.log(`Simulator ${worker.env["SERIAL_NUMBER"]} started`);
-});
-
-cluster.on("exit", function(worker, code, signal) {
-  console.log(`Simulator ${worker.env["SERIAL_NUMBER"]} died (${signal || code}). Restarting in 10 seconds...`)
-  setTimeout(function() {
-    let newWorker = cluster.fork(worker.env);
-    newWorker.env = worker.env;
-  }, 10000);
-});
-
-var mac = 211866461732864;
-
-for (let i = 0; i < program.opts().processes; ++ i) {
-  setTimeout(function() {
-    mac = mac + 3;
-    var nmac = new Array( 6 ).join( '00' )    // '000000000000'
-      .match( /../g )            // [ '00', '00', '00', '00', '00', '00' ]
-      .concat( 
-          mac.toString( 16 )     // "4a8926c44578"
-             .match( /.{1,2}/g ) // ["4a", "89", "26", "c4", "45", "78"]
-      )                          // ["00", "00", "00", "00", "00", "00", "4a", "89", "26", "c4", "45", "78"]
-      .reverse()                 // ["78", "45", "c4", "26", "89", "4a", "00", "00", "00", "00", "00", "00", ]
-      .slice( 0, 6 )             // ["78", "45", "c4", "26", "89", "4a" ]
-      .join( ':' );
-
-    let env = {
-      "MAC_ADDR": nmac,
-      "SERIAL_NUMBER": `00000${program.opts().serial + i}`.slice(-6),
-      "ACS_URL": program.opts().acsUrl,
-      "DATA_MODEL": program.opts().dataModel,
-    };
-    let worker = cluster.fork(env);
-    worker.env = env;
-  }, i  * program.opts().wait)
-}
+forkSimulations(
+  program.opts().acsUrl,
+  program.opts().processes,
+  program.opts().serial,
+  program.opts().dataModel,
+  program.opts().wait
+)

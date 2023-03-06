@@ -1,0 +1,25 @@
+{
+  // Use o IntelliSense para saber mais sobre os atributos possíveis.
+  // Focalizar para exibir as descrições dos atributos existentes.
+  // Para obter mais informações, acesse: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "FakeRouterSimulator",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "program": "${workspaceFolder}/genieacs-sim",
+      "args": [
+        "-u","http://localhost:57547",
+        "-p","2",
+        "--data-model", "./device-C0B101-ZXHN%20H199A-ZTEYH86LCN10105-2022-10-14T170342091Z.csv",
+      ],
+      "outFiles": [
+        "${workspaceFolder}/**/*.js"
+      ]
+    }
+  ]
+}

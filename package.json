@@ -1,8 +1,8 @@
 {
   "name": "genieacs-sim",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "TR-069 client simulator for GenieACS",
-  "main": "genieacs-sim.js",
+  "main": "src/main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
