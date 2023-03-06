@@ -21,11 +21,8 @@
     "url": "https://github.com/zaidka/genieacs-sim/issues"
   },
   "homepage": "https://genieacs.com",
-  "engines": {
-    "node": ">=6.9.2 <7.0"
-  },
   "dependencies": {
-    "commander": "^2.9.0"
+    "commander": "10.0.0"
   },
   "bin": "./genieacs-sim"
 }
