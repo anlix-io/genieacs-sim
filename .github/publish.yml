@@ -1,0 +1,49 @@
+name: NPM Publish
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  Main: 
+    name: Publishing
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+      - name : Checkout code
+        uses : actions/checkout@v3
+
+      - name: Setup node  
+        uses: actions/setup-node@v3
+        with:
+          node-version: 12
+
+      - name: Installing, building & testing.
+        run: npm install && tsc && npm run test
+
+      - name: NPM Publishing
+        uses: JS-DevTools/npm-publish@v1
+        with:
+          token: ${{ secrets.NPM_GENIE_ACS_SIM_PUBLISH }}
+          registry: https://registry.npmjs.org/
+          access: "public"
+      
+      - name: Reading version from package.json
+        run: |
+              PKG_VERSION=$(cat package.json \
+                | grep version \
+                | head -1 \
+                | awk -F: '{ print $2 }' \
+                | sed 's/[", ]//g') ; \
+              echo "PKG_VERSION=$PKG_VERSION" >> $GITHUB_ENV
+      
+      - name: Create Tag & push
+        run: |
+          git config --global user.email ${{ github.actor }}@users.noreply.github.com
+          git config --global user.name "GitHub Actions"
+          git tag -a "v${{ env.PKG_VERSION }}" -m "v${{ env.PKG_VERSION }}"
+          git push origin v${{ env.PKG_VERSION }}
