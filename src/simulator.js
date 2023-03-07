@@ -78,7 +78,7 @@ function sendRequest(xml, callback) {
 
       if (Math.floor(response.statusCode / 100) !== 2) {
         throw new Error(
-          `Unexpected response Code ${response.statusCode}: ${body}`
+          `Unexpected response code ${response.statusCode} on '${options}': ${body}`
         );
       }
 
@@ -218,47 +218,56 @@ function handleMethod(xml) {
   });
 }
 
-function listenForConnectionRequests(serialNumber, acsUrlOptions, callback) {
-  let ip, port;
-  // Start a dummy socket to get the used local ip
-  let socket = net.createConnection({
-    port: acsUrlOptions.port,
-    host: acsUrlOptions.hostname,
-    family: 4
-  })
-  .on("error", callback)
-  .on("connect", () => {
-    ip = socket.address().address;
-    port = socket.address().port + 1;
-    socket.end();
-  })
-  .on("close", () => {
-    const connectionRequestUrl = `http://${ip}:${port}/`;
+async function listenForConnectionRequests(serialNumber, acsUrlOptions, verbose, callback) {
+  return new Promise(function(resolve,reject){
+    let ip, port;
+    // Start a dummy socket to get the used local ip
+    let socket = net.createConnection({
+      port: acsUrlOptions.port,
+      host: acsUrlOptions.hostname,
+      family: 4
+    })
+    .on("error", function(err) {
+      reject(err)
+      callback(err)
+    })
+    .on("connect", () => {
+      ip = socket.address().address;
+      port = socket.address().port + 1;
+      socket.end();
+    })
+    .on("close", () => {
+      const connectionRequestUrl = `http://${ip}:${port}/`;
 
-    const httpServer = http.createServer((_req, res) => {
-      console.log(`Simulator ${serialNumber} got connection request`);
-      res.end();
-        // A session is ongoing when nextInformTimeout === null
-        if (nextInformTimeout === null) pendingInform = true;
-        else {
-          clearTimeout(nextInformTimeout);
-          nextInformTimeout = setTimeout(function () {
-            startSession("6 CONNECTION REQUEST");
-          }, 0);
+      const httpServer = http.createServer((_req, res) => {
+        if (verbose) 
+          console.log(`Simulator ${serialNumber} got connection request`);
+        res.end();
+          // A session is ongoing when nextInformTimeout === null
+          if (nextInformTimeout === null) pendingInform = true;
+          else {
+            clearTimeout(nextInformTimeout);
+            nextInformTimeout = setTimeout(function () {
+              startSession("6 CONNECTION REQUEST");
+            }, 0);
+          }
+      });
+
+      httpServer.listen(port, ip, err => {
+        if (err) return callback(err);
+        if (verbose) {
+          console.log(
+            `Simulator ${serialNumber} listening for connection requests on ${connectionRequestUrl}`
+          );
         }
+        callback(null, connectionRequestUrl);
+        resolve(httpServer);
+      });
     });
-
-    httpServer.listen(port, ip, err => {
-      if (err) return callback(err);
-      console.log(
-        `Simulator ${serialNumber} listening for connection requests on ${connectionRequestUrl}`
-      );
-      return callback(null, connectionRequestUrl);
-    });
-  });
+  })
 }
 
-function start(dataModel, serialNumber, macaddr, acsUrl) {
+function start(dataModel, serialNumber, macaddr, acsUrl, verbose=false) {
   device = dataModel;
 
   if (device["DeviceID.SerialNumber"])
@@ -287,7 +296,7 @@ function start(dataModel, serialNumber, macaddr, acsUrl) {
   http = require(requestOptions.protocol.slice(0, -1));
   httpAgent = new http.Agent({keepAlive: true, maxSockets: 1});
 
-  listenForConnectionRequests(serialNumber, requestOptions, (err, connectionRequestUrl) => {
+  return listenForConnectionRequests(serialNumber, requestOptions, verbose, (err, connectionRequestUrl) => {
     if (err) throw err;
     if (device["InternetGatewayDevice.ManagementServer.ConnectionRequestURL"]) {
       device["InternetGatewayDevice.ManagementServer.ConnectionRequestURL"][1] = connectionRequestUrl;

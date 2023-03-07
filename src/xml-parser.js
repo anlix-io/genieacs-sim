@@ -136,6 +136,7 @@ function encodeEntities(string) {
     "<": "&lt;",
     ">": "&gt;"
   };
+  if (typeof(string)!='string') string = `${string}`
   return string.replace(/[&"'<>]/g, m => entities[m]);
 }
 

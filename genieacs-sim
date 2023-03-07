@@ -5,14 +5,47 @@ const cluster = require("cluster");
 const pkg = require("./package.json");
 const { forkSimulations, runSimulation } = require("./src/main");
 
+function resolveModelPath(p) {
+  let ret = require("path").join( __dirname, 'models', p);
+  console.log("p:" , p , "ret:" , ret);
+  return ret
+}
 
-if (!cluster.isMaster) {
-  const acsUrl = process.env["ACS_URL"];
-  const dataModel = process.env["DATA_MODEL"];
-  const serialNumber = process.env["SERIAL_NUMBER"];
-  const macAddr = process.env["MAC_ADDR"];
-  return runSimulation(acsUrl, dataModel, serialNumber, macAddr);
-} else {
+if (cluster.isMaster) {
+  const program = require("commander")
+    .version(pkg.version)
+    .description(pkg.description)
+    .option("-u, --acs-url [url]", "ACS URL to contact (default: http://127.0.0.1:57547/)", "http://127.0.0.1:57547/")
+    .option("-m, --data-model [filename]", "Data model template", resolveModelPath, "./models/data_model_202BC1-BM632w-8KA8WA1151100043.csv")
+    .option("-p, --processes [count]", "Number of devices to simulate (default: 1)", parseFloat, 1)
+    .option("-w, --wait [milliseconds]", "Waiting period between process spawning (default: 1000)", parseFloat, 1000)
+    .option("-s, --serial [offset]", "Base serial number (default: 0)", parseFloat, 0)
+    .parse(process.argv);
+
+  program.parse()
+
+
+  if (!/^(http|https):\/\//.test(program.opts().acsUrl)) {
+    console.error(`Invalid ACS URL: "${program.opts().acsUrl}"`);
+    process.exit(1);
+  }
+  for (
+    let baseMac = 281474959933440, i = 0;
+    i < program.opts().processes;
+    baseMac++, i++
+  ) {
+    setTimeout(function() {
+      var usedMac = baseMac.toString(16).toUpperCase().slice(-12).match(/../g).join(':');
+      let env = {
+        "MAC_ADDR": usedMac,
+        "SERIAL_NUMBER": `00000${program.opts().serial + i}`.slice(-6),
+        "ACS_URL": program.opts().acsUrl,
+        "DATA_MODEL": program.opts().dataModel,
+      };
+      let worker = cluster.fork(env);
+      worker.env = env;
+    }, 1000 + i  * program.opts().wait)
+  }
   cluster.on("fork", function(worker) {
     console.log(`Simulator ${worker.env["SERIAL_NUMBER"]} started`);
   });
@@ -23,31 +56,10 @@ if (!cluster.isMaster) {
       newWorker.env = worker.env;
     }, 10000);
   });
+} else {
+  const acsUrl = process.env["ACS_URL"];
+  const dataModel = process.env["DATA_MODEL"];
+  const serialNumber = process.env["SERIAL_NUMBER"];
+  const macAddr = process.env["MAC_ADDR"];
+  return runSimulation(acsUrl, dataModel, serialNumber, macAddr, true);
 }
-
-
-
-
-function resolvePath(p) {
-  return require("path").resolve(process.cwd(), p);
-}
-
-const program = require("commander")
-  .version(pkg.version)
-  .description(pkg.description)
-  .option("-u, --acs-url [url]", "ACS URL to contact (default: http://127.0.0.1:57547/)", "http://127.0.0.1:57547/")
-  .option("-m, --data-model [filename]", "Data model template", resolvePath, "./models/device-C0B101-ZXHN%20H199A-ZTEYH86LCN10105-2022-10-14T170342091Z.csv")
-  .option("-p, --processes [count]", "Number of devices to simulate (default: 1)", parseFloat, 1)
-  .option("-w, --wait [milliseconds]", "Waiting period between process spawning (default: 1000)", parseFloat, 1000)
-  .option("-s, --serial [offset]", "Serial number offset (default: 0)", parseFloat, 0)
-  .parse(process.argv);
-
-program.parse()
-
-forkSimulations(
-  program.opts().acsUrl,
-  program.opts().processes,
-  program.opts().serial,
-  program.opts().dataModel,
-  program.opts().wait
-)
