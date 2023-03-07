@@ -22,9 +22,6 @@ jobs:
         with:
           node-version: 12
 
-      - name: Installing, building & testing.
-        run: npm install && tsc && npm run test
-
       - name: NPM Publishing
         uses: JS-DevTools/npm-publish@v1
         with:
