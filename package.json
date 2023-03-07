@@ -1,6 +1,6 @@
 {
-  "name": "genieacs-sim",
-  "version": "0.10.0",
+  "name": "@anlix-io/genieacs-sim",
+  "version": "1.0.0",
   "description": "TR-069 client simulator for GenieACS",
   "main": "src/main.js",
   "scripts": {
@@ -8,19 +8,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zaidka/genieacs-sim.git"
+    "url": "git+https://github.com/anlix-io/genieacs-sim"
   },
-  "keywords": [
-    "TR-069",
-    "CWMP",
-    "ACS"
-  ],
+  "keywords": ["TR-069", "CWMP", "ACS", "Simulator"],
   "author": "Zaid Abdulla <zaid@genieacs.com>",
+  "contributors": [
+    "Romeu Pires <romeu.pires@anlix.io>",
+    "Gaspare Bruno <gaspare@anlix.io>"
+  ],
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/zaidka/genieacs-sim/issues"
-  },
-  "homepage": "https://genieacs.com",
   "dependencies": {
     "commander": "10.0.0"
   },
