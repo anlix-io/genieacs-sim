@@ -28,7 +28,7 @@ jobs:
       - name: NPM Publishing
         uses: JS-DevTools/npm-publish@v1
         with:
-          token: ${{ secrets.NPM_GENIE_ACS_SIM_PUBLISH }}
+          token: ${{ secrets.NPM_FLASHAUDIT_PUBLISH }}
           registry: https://registry.npmjs.org/
           access: "public"
       
