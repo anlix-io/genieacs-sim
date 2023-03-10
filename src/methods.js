@@ -34,8 +34,7 @@ function inform(device, event, callback) {
       {},
       xmlParser.encodeEntities(device["DeviceID.Manufacturer"][1])
     );
-  }
-  else if (device["Device.DeviceInfo.Manufacturer"]) {
+  } else if (device["Device.DeviceInfo.Manufacturer"]) {
     manufacturer = xmlUtils.node(
       "Manufacturer",
       {}, 
@@ -56,8 +55,7 @@ function inform(device, event, callback) {
       {},
       xmlParser.encodeEntities(device["DeviceID.OUI"][1])
     );
-  }
-  else if (device["Device.DeviceInfo.ManufacturerOUI"]) {
+  } else if (device["Device.DeviceInfo.ManufacturerOUI"]) {
     oui = xmlUtils.node(
       "OUI",
       {},
@@ -371,8 +369,7 @@ function Download(device, request, callback) {
     }).on("error", (err) => {
       faultString = err.message;
     });
-  }
-  else if (url.startsWith("https://")) {
+  } else if (url.startsWith("https://")) {
     https.get(url, (res) => {
       res.on("end", () => {
         if (res.statusCode === 200) {

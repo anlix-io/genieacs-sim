@@ -33,7 +33,7 @@ function createSoapDocument(id, body) {
   let namespaces = {};
   for (let prefix in NAMESPACES)
     namespaces[`xmlns:${prefix}`] = NAMESPACES[prefix];
-  
+
   let env = xmlUtils.node("soap-env:Envelope", namespaces, [headerNode, bodyNode]);
 
   return `<?xml version="1.0" encoding="UTF-8"?>\n${env}`;
@@ -243,14 +243,14 @@ async function listenForConnectionRequests(serialNumber, acsUrlOptions, verbose,
         if (verbose) 
           console.log(`Simulator ${serialNumber} got connection request`);
         res.end();
-          // A session is ongoing when nextInformTimeout === null
-          if (nextInformTimeout === null) pendingInform = true;
-          else {
-            clearTimeout(nextInformTimeout);
-            nextInformTimeout = setTimeout(function () {
-              startSession("6 CONNECTION REQUEST");
-            }, 0);
-          }
+        // A session is ongoing when nextInformTimeout === null
+        if (nextInformTimeout === null) pendingInform = true;
+        else {
+          clearTimeout(nextInformTimeout);
+          nextInformTimeout = setTimeout(function () {
+            startSession("6 CONNECTION REQUEST");
+          }, 0);
+        }
       });
 
       httpServer.listen(port, ip, err => {
