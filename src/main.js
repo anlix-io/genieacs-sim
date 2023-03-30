@@ -7,7 +7,7 @@ const { Simulator, InvalidTaskNameError } = require("./simulator");
 const fakeGenie = {};
 
 fakeGenie.createSimulator = function(
-  acsUrl, dataModel, serialNumber, macAddr, verbose=false, turnOffInforms=false
+  acsUrl, dataModel, serialNumber, macAddr, verbose=false, turnOffPeriodicInforms=false
 ) {
   let device;
   const data = fs.readFileSync(dataModel);
@@ -28,7 +28,7 @@ fakeGenie.createSimulator = function(
   } else {
     device = JSON.parse(data);
   }
-  return new Simulator(device, serialNumber, macAddr, acsUrl, verbose, turnOffInforms);
+  return new Simulator(device, serialNumber, macAddr, acsUrl, verbose, turnOffPeriodicInforms);
 }
 
 fakeGenie.InvalidTaskNameError = InvalidTaskNameError;

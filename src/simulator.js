@@ -54,15 +54,14 @@ function createFaultResponse(code, message) {
 
 
 class InvalidTaskNameError extends Error {
-  constructor(name, xml, parsed) {
+  constructor(name, request) {
     super(`TR-069 Method "${name}" not supported`);
-    this.xml = xml;
-    this.parsed = parsed; // xml parsed by the simulator.
+    this.request = request; // xml parsed by the simulator.
   }
 }
 
 class Simulator extends EventEmitter {
-  device; serialNumber; macaddr; acsUrl; verbose; turnOffInforms;
+  device; serialNumber; macaddr; acsUrl; verbose; turnOffPeriodicInforms;
   requestOptions; http; httpAgent; basicAuth;
   nextInformTimeout; pendingInform;
   pending = [];
@@ -82,14 +81,14 @@ class Simulator extends EventEmitter {
   // error: when a connection error happens or when a task name is invalid.
     // event passes an error object.
 
-  constructor(dataModel, serialNumber, macaddr, acsUrl, verbose, turnOffInforms) {
+  constructor(device, serialNumber, macaddr, acsUrl, verbose, turnOffPeriodicInforms) {
     super();
-    this.device = dataModel;
+    this.device = device;
     this.serialNumber = serialNumber;
     this.macaddr = macaddr;
     this.acsUrl = acsUrl || 'http://127.0.0.1:57547/';
     this.verbose = verbose;
-    this.turnOffInforms = turnOffInforms; // controls sending informs or not.
+    this.turnOffPeriodicInforms = turnOffPeriodicInforms; // controls sending periodic informs or not.
   }
 
   async sendRequest(xml) {
@@ -199,7 +198,9 @@ class Simulator extends EventEmitter {
   async handleMethod(xml) {
     if (!xml) {
       this.httpAgent.destroy();
-      if (this.turnOffInforms) return; // prevents excess messages during controlled tests.
+
+      // prevents automatic messages during controlled tests.
+      if (this.turnOffPeriodicInforms) return;
 
       let informInterval = 10;
       if (this.device["Device.ManagementServer.PeriodicInformInterval"])
@@ -246,10 +247,10 @@ class Simulator extends EventEmitter {
     let method = methods[requestElement.localName];
 
     if (!method) {
-      this.emit('error', new InvalidTaskNameError(requestElement.localName, xml, requestElement));
+      this.emit('error', new InvalidTaskNameError(requestElement.localName, requestElement));
       let body = createFaultResponse(9000, "Method not supported");
-      let xml = createSoapDocument(requestId, body);
-      let receivedXml = await this.sendRequest(xml);
+      let xmlToSend = createSoapDocument(requestId, body);
+      let receivedXml = await this.sendRequest(xmlToSend);
       return this.handleMethod(receivedXml);
     }
 
