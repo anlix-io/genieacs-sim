@@ -257,11 +257,7 @@ class Simulator extends EventEmitter {
     let xmlToSend = createSoapDocument(requestId, body);
     let receivedXml = await this.sendRequest(xmlToSend);
     // already received, processed, sent values back and got response from ACS.
-    this.emit('task', {
-      name: requestElement.localName,
-      xml: xml,
-      parsed: requestElement,
-    });
+    this.emit('task', requestElement);
     await this.handleMethod(receivedXml);
   }
 
