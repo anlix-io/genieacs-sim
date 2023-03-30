@@ -1,12 +1,14 @@
-let fakeGenie = {}
-
-const simulator = require("./simulator");
 const csvParser = require("./csv-parser");
 const fs = require("fs");
 const path = require("path");
 const cluster = require('cluster');
+const { Simulator, InvalidTaskNameError } = require("./simulator");
 
-fakeGenie.runSimulation = function(acsUrl, dataModel, serialNumber, macAddr, verbose=false) {
+const fakeGenie = {};
+
+fakeGenie.createSimulator = function(
+  acsUrl, dataModel, serialNumber, macAddr, verbose=false, turnOffInforms=false
+) {
   let device;
   const data = fs.readFileSync(dataModel);
   if (path.parse(dataModel).ext.toLowerCase() === '.csv') {
@@ -16,7 +18,7 @@ fakeGenie.runSimulation = function(acsUrl, dataModel, serialNumber, macAddr, ver
       const isObject = row["Object"] === "true";
       let id = row["Parameter"];
       if (isObject) id += ".";
-      
+
       device[id] = [row["Writable"] === "true"];
       if (!isObject) {
         device[id].push(row["Value"] || "");
@@ -26,7 +28,9 @@ fakeGenie.runSimulation = function(acsUrl, dataModel, serialNumber, macAddr, ver
   } else {
     device = JSON.parse(data);
   }
-  return simulator.start(device, serialNumber, macAddr, acsUrl, verbose);
+  return new Simulator(device, serialNumber, macAddr, acsUrl, verbose, turnOffInforms);
 }
+
+fakeGenie.InvalidTaskNameError = InvalidTaskNameError;
 
 module.exports = fakeGenie;
