@@ -91,6 +91,138 @@ class Simulator extends EventEmitter {
     this.turnOffPeriodicInforms = turnOffPeriodicInforms; // controls sending periodic informs or not.
   }
 
+  toggleInform() {
+    this.turnOffPeriodicInforms = !this.turnOffPeriodicInforms;
+  }
+
+  async start() { // this can throw an error.
+    if (this.device["DeviceID.SerialNumber"])
+      this.device["DeviceID.SerialNumber"][1] = this.serialNumber;
+    if (this.device["Device.DeviceInfo.SerialNumber"])
+      this.device["Device.DeviceInfo.SerialNumber"][1] = this.serialNumber;
+    if (this.device["InternetGatewayDevice.DeviceInfo.SerialNumber"])
+      this.device["InternetGatewayDevice.DeviceInfo.SerialNumber"][1] = this.serialNumber;
+
+    if (this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"])
+      this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"][1] = this.macaddr;
+
+    let username = "";
+    let password = "";
+    if (this.device["Device.ManagementServer.Username"]) {
+      username = this.device["Device.ManagementServer.Username"][1];
+      password = this.device["Device.ManagementServer.Password"][1];
+    } else if (this.device["InternetGatewayDevice.ManagementServer.Username"]) {
+      username = this.device["InternetGatewayDevice.ManagementServer.Username"][1];
+      password = this.device["InternetGatewayDevice.ManagementServer.Password"][1];
+    }
+
+    this.basicAuth = "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
+
+    this.requestOptions = require("url").parse(this.acsUrl);
+    this.http = require(this.requestOptions.protocol.slice(0, -1));
+    this.httpAgent = new this.http.Agent({keepAlive: true, maxSockets: 1});
+
+    let connectionRequestUrl = await this.listenForConnectionRequests();
+    if (this.device["InternetGatewayDevice.ManagementServer.ConnectionRequestURL"]) {
+      this.device["InternetGatewayDevice.ManagementServer.ConnectionRequestURL"][1] = connectionRequestUrl;
+    } else if (this.device["Device.ManagementServer.ConnectionRequestURL"]) {
+      this.device["Device.ManagementServer.ConnectionRequestURL"][1] = connectionRequestUrl;
+    }
+    // device is ready to receive requests.
+    this.emit('started');
+
+    await this.startSession();
+    // device has already informed to ACS that it's online and has already 
+    // received pending tasks from ACS.
+    this.emit('ready');
+
+    return this;
+  }
+
+  async listenForConnectionRequests() {
+    return new Promise((resolve, reject) => {
+      let ip, port;
+      // Start a dummy socket to get the used local ip
+      let socket = net.createConnection({
+        port: this.requestOptions.port,
+        host: this.requestOptions.hostname,
+        family: 4
+      })
+      .on("error", reject)
+      .on("connect", () => {
+        ip = socket.address().address;
+        port = socket.address().port + 1;
+        socket.end();
+      })
+      .on("close", () => {
+        let connectionRequestUrl = `http://${ip}:${port}/`;
+
+        this.server = this.http.createServer((req, res) => {
+          if (this.verbose) console.log(`Simulator ${this.serialNumber} got connection request`);
+
+          let body = '';
+          req.on('readable', () => {
+            body += req.read();
+          }).on('end', () => {
+            res.end();
+            req.body = body.toString(); // usually it's just 'null'.
+            this.emit('requested', req);
+          }).on('error', (e) => {
+            this.emit('error', e)
+          });
+
+          // A session is ongoing when nextInformTimeout === null
+          if (this.nextInformTimeout === null) {
+            this.pendingInform = true;
+          } else {
+            clearTimeout(this.nextInformTimeout);
+            this.nextInformTimeout = setTimeout(() => this.startSession("6 CONNECTION REQUEST"), 0);
+          }
+        }).listen(port, ip, (err) => {
+          if (err) throw err;
+          if (this.verbose) {
+            console.log(`Simulator ${this.serialNumber} listening for connection `+
+              `requests on ${connectionRequestUrl}`);
+          }
+          resolve(connectionRequestUrl);
+        });
+      });
+    });
+  }
+
+  // stops running simulator instance in background so it can gracefully shut down.
+  async shutDown() {
+    if (this.nextInformTimeout) clearTimeout(this.nextInformTimeout);
+    if (this.server) return new Promise((resolve) => this.server.close(resolve));
+  }
+
+  async startSession(event) {
+    this.nextInformTimeout = null;
+    this.pendingInform = false;
+    const requestId = Math.random().toString(36).slice(-8);
+
+    try {
+      let body = methods.inform(this, event);
+      let xml = createSoapDocument(requestId, body);
+      await this.sendRequest(xml);
+      await this.cpeRequest();
+    } catch (e) {
+      console.log('Simulator internal error', e);
+    }
+  }
+
+  async cpeRequest() {
+    let pendingTask;
+    while (pendingTask = this.pending.shift()) {
+      const requestId = Math.random().toString(36).slice(-8);
+      const body = await pendingTask();
+      let xml = createSoapDocument(requestId, body);
+      await this.sendRequest(xml)
+    }
+    let receivedXml = await this.sendRequest(null);
+    await this.handleMethod(receivedXml);
+  }
+
   async sendRequest(xml) {
     let headers = {};
     let body = xml || "";
@@ -168,33 +300,6 @@ class Simulator extends EventEmitter {
     });
   }
 
-  async startSession(event) {
-    this.nextInformTimeout = null;
-    this.pendingInform = false;
-    const requestId = Math.random().toString(36).slice(-8);
-
-    try {
-      let body = methods.inform(this, event);
-      let xml = createSoapDocument(requestId, body);
-      await this.sendRequest(xml);
-      await this.cpeRequest();
-    } catch (e) {
-      console.log('Simulator internal error', e);
-    }
-  }
-
-  async cpeRequest() {
-    let pendingTask;
-    while (pendingTask = this.pending.shift()) {
-      const requestId = Math.random().toString(36).slice(-8);
-      const body = pendingTask();
-      let xml = createSoapDocument(requestId, body);
-      await this.sendRequest(xml)
-    }
-    let receivedXml = await this.sendRequest(null);
-    await this.handleMethod(receivedXml);
-  }
-
   async handleMethod(xml) {
     if (!xml) {
       this.httpAgent.destroy();
@@ -242,7 +347,7 @@ class Simulator extends EventEmitter {
       if (c.name.startsWith("cwmp:")) {
         requestElement = c;
         break;
-      }''
+      }
     }
     let method = methods[requestElement.localName];
 
@@ -260,107 +365,6 @@ class Simulator extends EventEmitter {
     // already received, processed, sent values back and got response from ACS.
     this.emit('task', requestElement);
     await this.handleMethod(receivedXml);
-  }
-
-  async listenForConnectionRequests() {
-    return new Promise((resolve, reject) => {
-      let ip, port;
-      // Start a dummy socket to get the used local ip
-      let socket = net.createConnection({
-        port: this.requestOptions.port,
-        host: this.requestOptions.hostname,
-        family: 4
-      })
-      .on("error", reject)
-      .on("connect", () => {
-        ip = socket.address().address;
-        port = socket.address().port + 1;
-        socket.end();
-      })
-      .on("close", () => {
-        let connectionRequestUrl = `http://${ip}:${port}/`;
-
-        this.server = this.http.createServer((req, res) => {
-          if (this.verbose) console.log(`Simulator ${this.serialNumber} got connection request`);
-
-          let body = '';
-          req.on('readable', () => {
-            body += req.read();
-          }).on('end', () => {
-            res.end();
-            req.body = body.toString(); // usually it's just 'null'.
-            this.emit('requested', req);
-          }).on('error', (e) => {
-            this.emit('error', e)
-          });
-
-          // A session is ongoing when nextInformTimeout === null
-          if (this.nextInformTimeout === null) {
-            this.pendingInform = true;
-          } else {
-            clearTimeout(this.nextInformTimeout);
-            this.nextInformTimeout = setTimeout(() => this.startSession("6 CONNECTION REQUEST"), 0);
-          }
-        }).listen(port, ip, (err) => {
-          if (err) throw err;
-          if (this.verbose) {
-            console.log(`Simulator ${this.serialNumber} listening for connection `+
-              `requests on ${connectionRequestUrl}`);
-          }
-          resolve(connectionRequestUrl);
-        });
-      });
-    });
-  }
-
-  // stops running simulator instance in background so it can gracefully shut down.
-  async shutDown() {
-    if (this.nextInformTimeout) clearTimeout(this.nextInformTimeout);
-    if (this.server) return new Promise((resolve) => this.server.close(resolve));
-  }
-
-  async start() { // this can throw an error.
-    if (this.device["DeviceID.SerialNumber"])
-      this.device["DeviceID.SerialNumber"][1] = this.serialNumber;
-    if (this.device["Device.DeviceInfo.SerialNumber"])
-      this.device["Device.DeviceInfo.SerialNumber"][1] = this.serialNumber;
-    if (this.device["InternetGatewayDevice.DeviceInfo.SerialNumber"])
-      this.device["InternetGatewayDevice.DeviceInfo.SerialNumber"][1] = this.serialNumber;
-
-    if (this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"])
-      this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"][1] = this.macaddr;
-
-    let username = "";
-    let password = "";
-    if (this.device["Device.ManagementServer.Username"]) {
-      username = this.device["Device.ManagementServer.Username"][1];
-      password = this.device["Device.ManagementServer.Password"][1];
-    } else if (this.device["InternetGatewayDevice.ManagementServer.Username"]) {
-      username = this.device["InternetGatewayDevice.ManagementServer.Username"][1];
-      password = this.device["InternetGatewayDevice.ManagementServer.Password"][1];
-    }
-
-    this.basicAuth = "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
-
-    this.requestOptions = require("url").parse(this.acsUrl);
-    this.http = require(this.requestOptions.protocol.slice(0, -1));
-    this.httpAgent = new this.http.Agent({keepAlive: true, maxSockets: 1});
-
-    let connectionRequestUrl = await this.listenForConnectionRequests();
-    if (this.device["InternetGatewayDevice.ManagementServer.ConnectionRequestURL"]) {
-      this.device["InternetGatewayDevice.ManagementServer.ConnectionRequestURL"][1] = connectionRequestUrl;
-    } else if (this.device["Device.ManagementServer.ConnectionRequestURL"]) {
-      this.device["Device.ManagementServer.ConnectionRequestURL"][1] = connectionRequestUrl;
-    }
-    // device is ready to receive requests.
-    this.emit('started');
-
-    await this.startSession();
-    // device has already informed to ACS that it's online and has already 
-    // received pending tasks from ACS.
-    this.emit('ready');
-
-    return this;
   }
 }
 
