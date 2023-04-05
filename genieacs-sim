@@ -3,7 +3,7 @@
 
 const cluster = require("cluster");
 const pkg = require("./package.json");
-const { forkSimulations, runSimulation } = require("./src/main");
+const { createSimulator } = require("./src/main");
 
 function resolveModelPath(p) {
   let ret = require("path").join( __dirname, 'models', p);
@@ -61,5 +61,14 @@ if (cluster.isMaster) {
   const dataModel = process.env["DATA_MODEL"];
   const serialNumber = process.env["SERIAL_NUMBER"];
   const macAddr = process.env["MAC_ADDR"];
-  return runSimulation(acsUrl, dataModel, serialNumber, macAddr, true);
+
+  let simulator = createSimulator(acsUrl, dataModel, serialNumber, macAddr, true)
+  .on('error', (e) => { // connection or task name errors during cwmp communication.
+    console.error(e);
+    process.exit(1);
+  });
+  return simulator.start().catch((e) => { // initialization error.
+    console.error(e);
+    process.exit(1);
+  });
 }

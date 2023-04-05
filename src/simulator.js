@@ -1,6 +1,7 @@
 "use strict";
 
 const net = require("net");
+const EventEmitter = require('events');
 const xmlParser = require("./xml-parser");
 const xmlUtils = require("./xml-utils");
 const methods = require("./methods");
@@ -12,14 +13,6 @@ const NAMESPACES = {
   "xsi": "http://www.w3.org/2001/XMLSchema-instance",
   "cwmp": "urn:dslforum-org:cwmp-1-0"
 };
-
-let nextInformTimeout = null;
-let pendingInform = false;
-let http = null;
-let requestOptions = null;
-let device = null;
-let httpAgent = null;
-let basicAuth;
 
 
 function createSoapDocument(id, body) {
@@ -37,81 +30,6 @@ function createSoapDocument(id, body) {
   let env = xmlUtils.node("soap-env:Envelope", namespaces, [headerNode, bodyNode]);
 
   return `<?xml version="1.0" encoding="UTF-8"?>\n${env}`;
-}
-
-function sendRequest(xml, callback) {
-  let headers = {};
-  let body = xml || "";
-
-  headers["Content-Length"] = body.length;
-  headers["Content-Type"] = "text/xml; charset=\"utf-8\"";
-  headers["Authorization"]= basicAuth;
-
-  if (device._cookie)
-    headers["Cookie"] = device._cookie;
-
-  let options = {
-    method: "POST",
-    headers: headers,
-    agent: httpAgent
-  };
-
-  Object.assign(options, requestOptions);
-
-  let request = http.request(options, function(response) {
-    let chunks = [];
-    let bytes = 0;
-
-    response.on("data", function(chunk) {
-      chunks.push(chunk);
-      return bytes += chunk.length;
-    });
-
-    return response.on("end", function() {
-      let offset = 0;
-      body = Buffer.allocUnsafe(bytes);
-
-      chunks.forEach(function(chunk) {
-        chunk.copy(body, offset, 0, chunk.length);
-        return offset += chunk.length;
-      });
-
-      if (Math.floor(response.statusCode / 100) !== 2) {
-        throw new Error(
-          `Unexpected response code ${response.statusCode} on '${options}': ${body}`
-        );
-      }
-
-      if (+response.headers["Content-Length"] > 0 || body.length > 0)
-        xml = xmlParser.parseXml(body.toString());
-      else
-        xml = null;
-
-      if (response.headers["set-cookie"])
-        device._cookie = response.headers["set-cookie"];
-
-      return callback(xml);
-    });
-  });
-
-  request.setTimeout(30000, function(err) {
-    throw new Error("Socket timed out");
-  });
-
-  return request.end(body);
-}
-
-function startSession(event) {
-  nextInformTimeout = null;
-  pendingInform = false;
-  const requestId = Math.random().toString(36).slice(-8);
-
-  methods.inform(device, event, function(body) {
-    let xml = createSoapDocument(requestId, body);
-    sendRequest(xml, function(xml) {
-      cpeRequest();
-    });
-  });
 }
 
 
@@ -135,176 +53,316 @@ function createFaultResponse(code, message) {
 }
 
 
-function cpeRequest() {
-  const pending = methods.getPending();
-  if (!pending) {
-    sendRequest(null, function(xml) {
-      handleMethod(xml);
-    });
-    return;
+class InvalidTaskNameError extends Error {
+  constructor(name, request) {
+    super(`TR-069 Method "${name}" not supported`);
+    this.request = request; // xml parsed by the simulator.
   }
-
-  const requestId = Math.random().toString(36).slice(-8);
-
-  pending(function(body, callback) {
-    let xml = createSoapDocument(requestId, body);
-    sendRequest(xml, function(xml) {
-      callback(xml, cpeRequest);
-    });
-  });
 }
 
+class Simulator extends EventEmitter {
+  device; serialNumber; macaddr; acsUrl; verbose; turnOffPeriodicInforms;
+  requestOptions; http; httpAgent; basicAuth;
+  nextInformTimeout; pendingInform;
+  pending = [];
+  server;
 
-function handleMethod(xml) {
-  if (!xml) {
-    httpAgent.destroy();
-    let informInterval = 10;
-    if (device["Device.ManagementServer.PeriodicInformInterval"])
-      informInterval = parseInt(device["Device.ManagementServer.PeriodicInformInterval"][1]);
-    else if (device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"])
-      informInterval = parseInt(device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"][1]);
+  // simulator emits the following events
+  // started: after it's already listening for connection requests from ACS.
+    // no argument.
+  // ready: after it has finished it's post boot communication with the ACS.
+    // no argument.
+  // requested: when it receives a connection request.
+    // event passes an http.IncomingMessage instance as argument.
+  // sent: when it sends a request to the ACS.
+    // event passes an http.ClientRequest instance as argument.
+  // response: when it receives a response from the ACS after sending a request to it.
+    // event passes an http.IncomingMessage instance as argument.
+  // error: when a connection error happens or when a task name is invalid.
+    // event passes an error object.
 
-    nextInformTimeout = setTimeout(function() {
-      startSession();
-    }, pendingInform ? 0 : 1000 * informInterval);
-
-    return;
+  constructor(device, serialNumber, macaddr, acsUrl, verbose, turnOffPeriodicInforms) {
+    super();
+    this.device = device;
+    this.serialNumber = serialNumber;
+    this.macaddr = macaddr;
+    this.acsUrl = acsUrl || 'http://127.0.0.1:57547/';
+    this.verbose = verbose;
+    this.turnOffPeriodicInforms = turnOffPeriodicInforms; // controls sending periodic informs or not.
   }
 
-  let headerElement, bodyElement;
-  let envelope = xml.children[0];
-  for (const c of envelope.children) {
-    switch (c.localName) {
-      case "Header":
-        headerElement = c;
-        break;
-      case "Body":
-        bodyElement = c;
-        break;
-    }
-  }
+  async sendRequest(xml) {
+    let headers = {};
+    let body = xml || "";
 
-  let requestId;
-  for (let c of headerElement.children) {
-    if (c.localName === "ID") {
-      requestId = xmlParser.decodeEntities(c.text);
-      break;
-    }
-  }
+    headers["Content-Length"] = body.length;
+    headers["Content-Type"] = "text/xml; charset=\"utf-8\"";
+    headers["Authorization"]= this.basicAuth;
 
-  let requestElement;
-  for (let c of bodyElement.children) {
-    if (c.name.startsWith("cwmp:")) {
-      requestElement = c;
-      break;
-    }
-  }
-  let method = methods[requestElement.localName];
+    if (this.device._cookie)
+      headers["Cookie"] = this.device._cookie;
 
-  if (!method) {
-    let body = createFaultResponse(9000, "Method not supported");
-    let xml = createSoapDocument(requestId, body);
-    sendRequest(xml, function(xml) {
-      handleMethod(xml);
-    });
-    return;
-  }
+    let options = {
+      method: "POST",
+      headers: headers,
+      agent: this.httpAgent
+    };
 
-  method(device, requestElement, function(body) {
-    let xml = createSoapDocument(requestId, body);
-    sendRequest(xml, function(xml) {
-      handleMethod(xml);
-    });
-  });
-}
+    Object.assign(options, this.requestOptions);
 
-async function listenForConnectionRequests(serialNumber, acsUrlOptions, verbose, callback) {
-  return new Promise(function(resolve,reject){
-    let ip, port;
-    // Start a dummy socket to get the used local ip
-    let socket = net.createConnection({
-      port: acsUrlOptions.port,
-      host: acsUrlOptions.hostname,
-      family: 4
-    })
-    .on("error", function(err) {
-      reject(err)
-      callback(err)
-    })
-    .on("connect", () => {
-      ip = socket.address().address;
-      port = socket.address().port + 1;
-      socket.end();
-    })
-    .on("close", () => {
-      const connectionRequestUrl = `http://${ip}:${port}/`;
+    return new Promise((resolve) => { // emitting all known errors.
+      let request = this.http.request(options, (response) => {
+        let chunks = [];
+        let bytes = 0;
 
-      const httpServer = http.createServer((_req, res) => {
-        if (verbose) 
-          console.log(`Simulator ${serialNumber} got connection request`);
-        res.end();
-        // A session is ongoing when nextInformTimeout === null
-        if (nextInformTimeout === null) pendingInform = true;
-        else {
-          clearTimeout(nextInformTimeout);
-          nextInformTimeout = setTimeout(function () {
-            startSession("6 CONNECTION REQUEST");
-          }, 0);
-        }
+        response.on("data", (chunk) => {
+          chunks.push(chunk);
+          return bytes += chunk.length;
+        }).on("end", () => {
+          let offset = 0;
+          body = Buffer.allocUnsafe(bytes);
+
+          chunks.forEach((chunk) => {
+            chunk.copy(body, offset, 0, chunk.length);
+            return offset += chunk.length;
+          });
+
+          response.body = body.toString();
+
+          if (Math.floor(response.statusCode / 100) !== 2) {
+            let {method, href, headers} = options;
+            this.emit('error', new Error(`Unexpected response code ${response.statusCode} `+
+              `on '${JSON.stringify({method, href, headers})}': ${body}`));
+            return;
+          }
+
+          if (+response.headers["Content-Length"] > 0 || body.length > 0)
+            xml = xmlParser.parseXml(response.body);
+          else
+            xml = null;
+
+          if (response.headers["set-cookie"])
+            this.device._cookie = response.headers["set-cookie"];
+
+          this.emit('response', response);
+          resolve(xml);
+        }).on("error", (e) => {
+          this.emit('error', e);
+        });
       });
 
-      httpServer.listen(port, ip, err => {
-        if (err) return callback(err);
-        if (verbose) {
-          console.log(
-            `Simulator ${serialNumber} listening for connection requests on ${connectionRequestUrl}`
-          );
-        }
-        callback(null, connectionRequestUrl);
-        resolve(httpServer);
+      request.on('error', (e) => {
+        this.emit('error', e);
+      });
+
+      let requestTimeout = 30000;
+      request.setTimeout(requestTimeout, (err) => {
+        this.emit('error', 
+          new Error(`Socket timed out after ${requestTimeout/1000} seconds.`));
+      });
+
+      request.body = body;
+      request.end(body, () => {
+        this.emit('sent', request);
       });
     });
-  })
-}
-
-function start(dataModel, serialNumber, macaddr, acsUrl, verbose=false) {
-  device = dataModel;
-
-  if (device["DeviceID.SerialNumber"])
-    device["DeviceID.SerialNumber"][1] = serialNumber;
-  if (device["Device.DeviceInfo.SerialNumber"])
-    device["Device.DeviceInfo.SerialNumber"][1] = serialNumber;
-  if (device["InternetGatewayDevice.DeviceInfo.SerialNumber"])
-    device["InternetGatewayDevice.DeviceInfo.SerialNumber"][1] = serialNumber;
-
-  if (device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"])
-    device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"][1] = macaddr;
-
-  let username = "";
-  let password = "";
-  if (device["Device.ManagementServer.Username"]) {
-    username = device["Device.ManagementServer.Username"][1];
-    password = device["Device.ManagementServer.Password"][1];
-  } else if (device["InternetGatewayDevice.ManagementServer.Username"]) {
-    username = device["InternetGatewayDevice.ManagementServer.Username"][1];
-    password = device["InternetGatewayDevice.ManagementServer.Password"][1];
   }
 
-  basicAuth = "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
+  async startSession(event) {
+    this.nextInformTimeout = null;
+    this.pendingInform = false;
+    const requestId = Math.random().toString(36).slice(-8);
 
-  requestOptions = require("url").parse(acsUrl);
-  http = require(requestOptions.protocol.slice(0, -1));
-  httpAgent = new http.Agent({keepAlive: true, maxSockets: 1});
-
-  return listenForConnectionRequests(serialNumber, requestOptions, verbose, (err, connectionRequestUrl) => {
-    if (err) throw err;
-    if (device["InternetGatewayDevice.ManagementServer.ConnectionRequestURL"]) {
-      device["InternetGatewayDevice.ManagementServer.ConnectionRequestURL"][1] = connectionRequestUrl;
-    } else if (device["Device.ManagementServer.ConnectionRequestURL"]) {
-      device["Device.ManagementServer.ConnectionRequestURL"][1] = connectionRequestUrl;
+    try {
+      let body = methods.inform(this, event);
+      let xml = createSoapDocument(requestId, body);
+      await this.sendRequest(xml);
+      await this.cpeRequest();
+    } catch (e) {
+      console.log('Simulator internal error', e);
     }
-    startSession();
-  });
+  }
+
+  async cpeRequest() {
+    let pendingTask;
+    while (pendingTask = this.pending.shift()) {
+      const requestId = Math.random().toString(36).slice(-8);
+      const body = pendingTask();
+      let xml = createSoapDocument(requestId, body);
+      await this.sendRequest(xml)
+    }
+    let receivedXml = await this.sendRequest(null);
+    await this.handleMethod(receivedXml);
+  }
+
+  async handleMethod(xml) {
+    if (!xml) {
+      this.httpAgent.destroy();
+
+      // prevents automatic messages during controlled tests.
+      if (this.turnOffPeriodicInforms) return;
+
+      let informInterval = 10;
+      if (this.device["Device.ManagementServer.PeriodicInformInterval"])
+        informInterval = parseInt(this.device["Device.ManagementServer.PeriodicInformInterval"][1]);
+      else if (this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"])
+        informInterval = parseInt(this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"][1]);
+
+      this.nextInformTimeout = setTimeout(
+        this.startSession.bind(this),
+        this.pendingInform ? 0 : 1000 * informInterval,
+      );
+
+      return;
+    }
+
+    let headerElement, bodyElement;
+    let envelope = xml.children[0];
+    for (const c of envelope.children) {
+      switch (c.localName) {
+        case "Header":
+          headerElement = c;
+          break;
+        case "Body":
+          bodyElement = c;
+          break;
+      }
+    }
+
+    let requestId;
+    for (let c of headerElement.children) {
+      if (c.localName === "ID") {
+        requestId = xmlParser.decodeEntities(c.text);
+        break;
+      }
+    }
+
+    let requestElement;
+    for (let c of bodyElement.children) {
+      if (c.name.startsWith("cwmp:")) {
+        requestElement = c;
+        break;
+      }''
+    }
+    let method = methods[requestElement.localName];
+
+    if (!method) {
+      this.emit('error', new InvalidTaskNameError(requestElement.localName, requestElement));
+      let body = createFaultResponse(9000, "Method not supported");
+      let xmlToSend = createSoapDocument(requestId, body);
+      let receivedXml = await this.sendRequest(xmlToSend);
+      return this.handleMethod(receivedXml);
+    }
+
+    let body = method(this, requestElement);
+    let xmlToSend = createSoapDocument(requestId, body);
+    let receivedXml = await this.sendRequest(xmlToSend);
+    // already received, processed, sent values back and got response from ACS.
+    this.emit('task', requestElement);
+    await this.handleMethod(receivedXml);
+  }
+
+  async listenForConnectionRequests() {
+    return new Promise((resolve, reject) => {
+      let ip, port;
+      // Start a dummy socket to get the used local ip
+      let socket = net.createConnection({
+        port: this.requestOptions.port,
+        host: this.requestOptions.hostname,
+        family: 4
+      })
+      .on("error", reject)
+      .on("connect", () => {
+        ip = socket.address().address;
+        port = socket.address().port + 1;
+        socket.end();
+      })
+      .on("close", () => {
+        let connectionRequestUrl = `http://${ip}:${port}/`;
+
+        this.server = this.http.createServer((req, res) => {
+          if (this.verbose) console.log(`Simulator ${this.serialNumber} got connection request`);
+
+          let body = '';
+          req.on('readable', () => {
+            body += req.read();
+          }).on('end', () => {
+            res.end();
+            req.body = body.toString(); // usually it's just 'null'.
+            this.emit('requested', req);
+          }).on('error', (e) => {
+            this.emit('error', e)
+          });
+
+          // A session is ongoing when nextInformTimeout === null
+          if (this.nextInformTimeout === null) {
+            this.pendingInform = true;
+          } else {
+            clearTimeout(this.nextInformTimeout);
+            this.nextInformTimeout = setTimeout(() => this.startSession("6 CONNECTION REQUEST"), 0);
+          }
+        }).listen(port, ip, (err) => {
+          if (err) throw err;
+          if (this.verbose) {
+            console.log(`Simulator ${this.serialNumber} listening for connection `+
+              `requests on ${connectionRequestUrl}`);
+          }
+          resolve(connectionRequestUrl);
+        });
+      });
+    });
+  }
+
+  // stops running simulator instance in background so it can gracefully shut down.
+  async shutDown() {
+    if (this.nextInformTimeout) clearTimeout(this.nextInformTimeout);
+    if (this.server) return new Promise((resolve) => this.server.close(resolve));
+  }
+
+  async start() { // this can throw an error.
+    if (this.device["DeviceID.SerialNumber"])
+      this.device["DeviceID.SerialNumber"][1] = this.serialNumber;
+    if (this.device["Device.DeviceInfo.SerialNumber"])
+      this.device["Device.DeviceInfo.SerialNumber"][1] = this.serialNumber;
+    if (this.device["InternetGatewayDevice.DeviceInfo.SerialNumber"])
+      this.device["InternetGatewayDevice.DeviceInfo.SerialNumber"][1] = this.serialNumber;
+
+    if (this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"])
+      this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"][1] = this.macaddr;
+
+    let username = "";
+    let password = "";
+    if (this.device["Device.ManagementServer.Username"]) {
+      username = this.device["Device.ManagementServer.Username"][1];
+      password = this.device["Device.ManagementServer.Password"][1];
+    } else if (this.device["InternetGatewayDevice.ManagementServer.Username"]) {
+      username = this.device["InternetGatewayDevice.ManagementServer.Username"][1];
+      password = this.device["InternetGatewayDevice.ManagementServer.Password"][1];
+    }
+
+    this.basicAuth = "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
+
+    this.requestOptions = require("url").parse(this.acsUrl);
+    this.http = require(this.requestOptions.protocol.slice(0, -1));
+    this.httpAgent = new this.http.Agent({keepAlive: true, maxSockets: 1});
+
+    let connectionRequestUrl = await this.listenForConnectionRequests();
+    if (this.device["InternetGatewayDevice.ManagementServer.ConnectionRequestURL"]) {
+      this.device["InternetGatewayDevice.ManagementServer.ConnectionRequestURL"][1] = connectionRequestUrl;
+    } else if (this.device["Device.ManagementServer.ConnectionRequestURL"]) {
+      this.device["Device.ManagementServer.ConnectionRequestURL"][1] = connectionRequestUrl;
+    }
+    // device is ready to receive requests.
+    this.emit('started');
+
+    await this.startSession();
+    // device has already informed to ACS that it's online and has already 
+    // received pending tasks from ACS.
+    this.emit('ready');
+
+    return this;
+  }
 }
 
-exports.start = start;
+exports.Simulator = Simulator;
+exports.InvalidTaskNameError = InvalidTaskNameError;

@@ -26,7 +26,8 @@ const INFORM_PARAMS = [
 ];
 
 
-function inform(device, event, callback) {
+function inform(simulator, event) {
+  const device = simulator.device;
   let manufacturer = "";
   if (device["DeviceID.Manufacturer"]) {
     manufacturer = xmlUtils.node(
@@ -160,16 +161,8 @@ function inform(device, event, callback) {
     parameterList
   ]);
 
-  return callback(inform);
+  return inform;
 }
-
-
-const pending = [];
-
-function getPending() {
-  return pending.shift();
-}
-
 
 function getSortedPaths(device) {
   if (device._sortedPaths) return device._sortedPaths;
@@ -179,7 +172,8 @@ function getSortedPaths(device) {
 }
 
 
-function GetParameterNames(device, request, callback) {
+function GetParameterNames(simulator, request) {
+  const device = simulator.device;
   let parameterNames = getSortedPaths(device);
 
   let parameterPath, nextLevel;
@@ -231,11 +225,12 @@ function GetParameterNames(device, request, callback) {
     )
   );
 
-  return callback(response);
+  return response;
 }
 
 
-function GetParameterValues(device, request, callback) {
+function GetParameterValues(simulator, request) {
+  const device = simulator.device;
   let parameterNames = request.children[0].children;
 
   let params = []
@@ -260,11 +255,12 @@ function GetParameterValues(device, request, callback) {
     )
   );
 
-  return callback(response);
+  return response;
 }
 
 
-function SetParameterValues(device, request, callback) {
+function SetParameterValues(simulator, request) {
+  const device = simulator.device;
   let parameterValues = request.children[0].children;
 
   for (let p of parameterValues) {
@@ -286,11 +282,12 @@ function SetParameterValues(device, request, callback) {
   }
 
   let response = xmlUtils.node("cwmp:SetParameterValuesResponse", {}, xmlUtils.node("Status", {}, "0"));
-  return callback(response);
+  return response;
 }
 
 
-function AddObject(device, request, callback) {
+function AddObject(simulator, request) {
+  const device = simulator.device;
   let objectName = request.children[0].text;
   let instanceNumber = 1;
 
@@ -319,11 +316,12 @@ function AddObject(device, request, callback) {
     xmlUtils.node("Status", {}, "0")
   ]);
   delete device._sortedPaths;
-  return callback(response);
+  return response;
 }
 
 
-function DeleteObject(device, request, callback) {
+function DeleteObject(simulator, request) {
+  const device = simulator.device;
   let objectName = request.children[0].text;
 
   for (let p in device) {
@@ -333,11 +331,11 @@ function DeleteObject(device, request, callback) {
 
   let response = xmlUtils.node("cwmp:DeleteObjectResponse", {}, xmlUtils.node("Status", {}, "0"));
   delete device._sortedPaths;
-  return callback(response);
+  return response;
 }
 
 
-function Download(device, request, callback) {
+function Download(simulator, request) {
   let commandKey, url;
   for (let c of request.children) {
     switch (c.name) {
@@ -388,24 +386,20 @@ function Download(device, request, callback) {
   }
 
   const startTime = new Date();
-  pending.push(
-    function(callback) {
-      let fault = xmlUtils.node("FaultStruct", {}, [
-        xmlUtils.node("FaultCode", {}, faultCode),
-        xmlUtils.node("FaultString", {}, xmlParser.encodeEntities(faultString))
-      ]);
-      let request = xmlUtils.node("cwmp:TransferComplete", {}, [
-        xmlUtils.node("CommandKey", {}, commandKey),
-        xmlUtils.node("StartTime", {}, startTime.toISOString()),
-        xmlUtils.node("CompleteTime", {}, new Date().toISOString()),
-        fault
-      ]);
 
-      callback(request, function(xml, callback) {
-        callback();
-      });
-    }
-  );
+  simulator.pending.push(function() {
+    let fault = xmlUtils.node("FaultStruct", {}, [
+      xmlUtils.node("FaultCode", {}, faultCode),
+      xmlUtils.node("FaultString", {}, xmlParser.encodeEntities(faultString))
+    ]);
+    let request = xmlUtils.node("cwmp:TransferComplete", {}, [
+      xmlUtils.node("CommandKey", {}, commandKey),
+      xmlUtils.node("StartTime", {}, startTime.toISOString()),
+      xmlUtils.node("CompleteTime", {}, new Date().toISOString()),
+      fault
+    ]);
+    return request;
+  });
 
   let response = xmlUtils.node("cwmp:DownloadResponse", {}, [
     xmlUtils.node("Status", {}, "1"),
@@ -413,12 +407,11 @@ function Download(device, request, callback) {
     xmlUtils.node("CompleteTime", {}, "0001-01-01T00:00:00Z")
   ]);
 
-  return callback(response);
+  return response;
 }
 
 
 exports.inform = inform;
-exports.getPending = getPending;
 exports.GetParameterNames = GetParameterNames;
 exports.GetParameterValues = GetParameterValues;
 exports.SetParameterValues = SetParameterValues;
