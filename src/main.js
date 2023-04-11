@@ -3,11 +3,12 @@ const fs = require("fs");
 const path = require("path");
 const cluster = require('cluster');
 const { Simulator, InvalidTaskNameError } = require("./simulator");
+const { formatXML } = require("./xml-utils");
 
 const fakeGenie = {};
 
 fakeGenie.createSimulator = function(
-  acsUrl, dataModel, serialNumber, macAddr, verbose=false, turnOffPeriodicInforms=false
+  acsUrl, dataModel, serialNumber, macAddr, verbose=false, periodicInformsDisabled=false
 ) {
   let device;
   const data = fs.readFileSync(dataModel);
@@ -28,9 +29,10 @@ fakeGenie.createSimulator = function(
   } else {
     device = JSON.parse(data);
   }
-  return new Simulator(device, serialNumber, macAddr, acsUrl, verbose, turnOffPeriodicInforms);
+  return new Simulator(device, serialNumber, macAddr, acsUrl, verbose, periodicInformsDisabled);
 }
 
 fakeGenie.InvalidTaskNameError = InvalidTaskNameError;
+fakeGenie.formatXML = formatXML;
 
 module.exports = fakeGenie;

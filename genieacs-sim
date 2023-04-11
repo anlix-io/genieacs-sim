@@ -3,7 +3,7 @@
 
 const cluster = require("cluster");
 const pkg = require("./package.json");
-const { createSimulator } = require("./src/main");
+const { createSimulator, formatXML } = require("./src/main");
 
 function resolveModelPath(p) {
   let ret = require("path").join( __dirname, 'models', p);
@@ -66,6 +66,14 @@ if (cluster.isMaster) {
   .on('error', (e) => { // connection or task name errors during cwmp communication.
     console.error(e);
     process.exit(1);
+  // }).on('requested', (request) => {
+  //   console.log(`- RECEIVED REQUEST BODY '${formatXML(request.body)}'.`);
+  // }).on('response', (response) => {
+  //   console.log(`- RECEIVED RESPONSE BODY '${formatXML(response.body)}'.`);
+  // }).on('sent', (request) => {
+  //   console.log(`- SENT BODY '${formatXML(request.body)}'.`);
+  // }).on('task', (task) => {
+  //   console.log('- PROCESSED task', JSON.stringify(task, null, '  '));
   });
   return simulator.start().catch((e) => { // initialization error.
     console.error(e);

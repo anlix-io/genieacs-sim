@@ -5,6 +5,7 @@ const EventEmitter = require('events');
 const xmlParser = require("./xml-parser");
 const xmlUtils = require("./xml-utils");
 const methods = require("./methods");
+const diagnostics = require("./diagnostics");
 
 const NAMESPACES = {
   "soap-enc": "http://schemas.xmlsoap.org/soap/encoding/",
@@ -60,12 +61,13 @@ class InvalidTaskNameError extends Error {
   }
 }
 
+
 class Simulator extends EventEmitter {
-  device; serialNumber; macaddr; acsUrl; verbose; turnOffPeriodicInforms;
-  requestOptions; http; httpAgent; basicAuth;
+  device; serialNumber; macaddr; acsUrl; verbose; periodicInformsDisabled;
+  requestOptions; http; httpAgent; basicAuth; server;
   nextInformTimeout; pendingInform;
   pending = [];
-  server;
+  diagnosticsStates = {};
 
   // simulator emits the following events
   // started: after it's already listening for connection requests from ACS.
@@ -81,21 +83,58 @@ class Simulator extends EventEmitter {
   // error: when a connection error happens or when a task name is invalid.
     // event passes an error object.
 
-  constructor(device, serialNumber, macaddr, acsUrl, verbose, turnOffPeriodicInforms) {
+  constructor(device, serialNumber, macaddr, acsUrl, verbose, periodicInformsDisabled) {
     super();
     this.device = device;
     this.serialNumber = serialNumber;
     this.macaddr = macaddr;
     this.acsUrl = acsUrl || 'http://127.0.0.1:57547/';
     this.verbose = verbose;
-    this.turnOffPeriodicInforms = turnOffPeriodicInforms; // controls sending periodic informs or not.
+    this.periodicInformsDisabled = periodicInformsDisabled; // controls sending periodic informs or not.
+
+    for (let key in diagnostics) {
+      this.diagnosticsStates[key] = {}; // initializing diagnostic state attributes.
+      this.setResultForDiagnostic(key); // setting default result for diagnostic.
+    }
   }
 
-  toggleInform() {
-    this.turnOffPeriodicInforms = !this.turnOffPeriodicInforms;
+  // turn on, off or toggles periodic informs.
+  setPeriodicInforms(bool) {
+    if (bool === undefined) { // toggling value.
+      this.periodicInformsDisabled = !this.periodicInformsDisabled;
+    } else if (bool.constructor === Boolean) { // setting value.
+      this.periodicInformsDisabled = !bool; // variable name represents a negation.
+    }
+
+    if (this.periodicInformsDisabled) { // if on and should be off clear timeout.
+      clearTimeout(this.nextInformTimeout);
+      this.nextInformTimeout = null;
+    } else if (!this.nextInformTimeout) { // if off and should be on, set next.
+      this.setNextPeriodicInform();
+    }
+  }
+  togglePeriodicInforms = () => setPeriodicInforms();
+
+  // stops running simulator instance in background so it can gracefully shut down.
+  async shutDown() {
+    for (let key in this.diagnosticsStates) clearTimeout(this.diagnosticsStates[key].running);
+    if (this.nextInformTimeout) {
+      clearTimeout(this.nextInformTimeout);
+      this.nextInformTimeout = null;
+    }
+    if (this.server) {
+      await new Promise((resolve) => this.server.close(resolve));
+      this.server = undefined;
+      return;
+    }
   }
 
   async start() { // this can throw an error.
+    if (this.server) {
+      console.log(`Simulator ${this.serialNumber} already started`);
+      return;
+    }
+
     if (this.device["DeviceID.SerialNumber"])
       this.device["DeviceID.SerialNumber"][1] = this.serialNumber;
     if (this.device["Device.DeviceInfo.SerialNumber"])
@@ -131,8 +170,8 @@ class Simulator extends EventEmitter {
     // device is ready to receive requests.
     this.emit('started');
 
-    await this.startSession();
-    // device has already informed to ACS that it's online and has already 
+    await this.startSession("1 BOOT");
+    // device has already informed, to ACS, that it is online and has already 
     // received pending tasks from ACS.
     this.emit('ready');
 
@@ -171,13 +210,7 @@ class Simulator extends EventEmitter {
             this.emit('error', e)
           });
 
-          // A session is ongoing when nextInformTimeout === null
-          if (this.nextInformTimeout === null) {
-            this.pendingInform = true;
-          } else {
-            clearTimeout(this.nextInformTimeout);
-            this.nextInformTimeout = setTimeout(() => this.startSession("6 CONNECTION REQUEST"), 0);
-          }
+          this.startSession("6 CONNECTION REQUEST");
         }).listen(port, ip, (err) => {
           if (err) throw err;
           if (this.verbose) {
@@ -190,13 +223,14 @@ class Simulator extends EventEmitter {
     });
   }
 
-  // stops running simulator instance in background so it can gracefully shut down.
-  async shutDown() {
-    if (this.nextInformTimeout) clearTimeout(this.nextInformTimeout);
-    if (this.server) return new Promise((resolve) => this.server.close(resolve));
-  }
-
   async startSession(event) {
+    // A session is ongoing when nextInformTimeout === null
+    if (this.nextInformTimeout === null) {
+      this.pendingInform = true;
+      return;
+    }
+
+    clearTimeout(this.nextInformTimeout);
     this.nextInformTimeout = null;
     this.pendingInform = false;
     const requestId = Math.random().toString(36).slice(-8);
@@ -300,24 +334,25 @@ class Simulator extends EventEmitter {
     });
   }
 
+  // sets a timeout to send a periodic inform using configured inform interval.
+  setNextPeriodicInform() {
+    let informInterval = 10;
+    if (this.device["Device.ManagementServer.PeriodicInformInterval"])
+      informInterval = parseInt(this.device["Device.ManagementServer.PeriodicInformInterval"][1]);
+    else if (this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"])
+      informInterval = parseInt(this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"][1]);
+
+    this.nextInformTimeout = setTimeout(
+      this.startSession.bind(this),
+      this.pendingInform ? 0 : 1000 * informInterval,
+    );
+  }
+
   async handleMethod(xml) {
     if (!xml) {
       this.httpAgent.destroy();
-
-      // prevents automatic messages during controlled tests.
-      if (this.turnOffPeriodicInforms) return;
-
-      let informInterval = 10;
-      if (this.device["Device.ManagementServer.PeriodicInformInterval"])
-        informInterval = parseInt(this.device["Device.ManagementServer.PeriodicInformInterval"][1]);
-      else if (this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"])
-        informInterval = parseInt(this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"][1]);
-
-      this.nextInformTimeout = setTimeout(
-        this.startSession.bind(this),
-        this.pendingInform ? 0 : 1000 * informInterval,
-      );
-
+      if (this.periodicInformsDisabled) return; // prevents periodic informs during controlled tests.
+      this.setNextPeriodicInform();
       return;
     }
 
@@ -365,6 +400,26 @@ class Simulator extends EventEmitter {
     // already received, processed, sent values back and got response from ACS.
     this.emit('task', requestElement);
     await this.handleMethod(receivedXml);
+  }
+
+  setResultForDiagnostic(name, result='default') {
+    const diagnostic = diagnostics[name];
+    if (!diagnostic) {
+      return `Simulator ${this.serialNumber} has no diagnostic named '${name}'.`;
+    }
+
+    if (this.diagnosticsStates[name].running && this.diagnosticsStates[name].running._destroyed === false) {
+      console.log(`Simulator ${this.serialNumber} warning: '${name}' diagnostic already running. `+
+        `You might want to set the expected result before initiating the diagnostic.`);
+    }
+
+    const nextResultFunc = diagnostic.results[result];
+    if (!nextResultFunc) {
+      return `Simulator ${this.serialNumber} has no '${result}' result `+
+        `that can be expected for a '${name}' diagnostic.`
+    }
+
+    this.diagnosticsStates[name].result = nextResultFunc;
   }
 }
 
