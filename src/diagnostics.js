@@ -1,3 +1,11 @@
+function finish(simulator, name, func, afterMilliseconds) {
+  simulator.diagnosticsStates[name].running = setTimeout(async () => {
+    await func(simulator);
+    await simulator.startSession('8 DIAGNOSTICS COMPLETE');
+    simulator.emit('diagnostic', name);
+  }, afterMilliseconds);
+}
+
 const ping = {
   // executes Ping Diagnostic logic.
   run: function(simulator, modified) {
@@ -28,12 +36,10 @@ const ping = {
     // MUST be set either prior to or at the same time as (in the same SetParameterValues) setting the
     // DiagnosticsState to Requested.
 
-    const simulatorPing = simulator.diagnosticsStates.ping;
-
     // While the test is in progress, setting 'DiganosticState' to "Requested" (and possibly modifying
     // other writable parameters in this object) MUST result in the test being terminated and then
     // restarted using the current values of the test parameters.
-    clearTimeout(simulatorPing.running);
+    clearTimeout(simulator.diagnosticsStates.ping.running);
 
     // When the test is completed, the value of 'DiganosticState' MUST be either "Complete" or
     // one of the Error values.
@@ -46,13 +52,11 @@ const ping = {
     const host = simulator.device['InternetGatewayDevice.IPPingDiagnostics.Host'][1];
     // checking host.
     if (host === '' || host.length > 256) {
-      simulatorPing.running = setTimeout(() => {
+      finish(simulator, 'ping', (simulator) => {
         simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] = 'Error_CannotResolveHostName';
-        simulator.startSession('8 Diagnostics Complete');
       }, 50);
       return;
     }
-    const interface = simulator.device['InternetGatewayDevice.IPPingDiagnostics.Interface'][1];
     const dataBlockSize = parseInt(simulator.device['InternetGatewayDevice.IPPingDiagnostics.DataBlockSize'][1]);
     const dscp = parseInt(simulator.device['InternetGatewayDevice.IPPingDiagnostics.DSCP'][1]);
     // checking other parameter's.
@@ -61,23 +65,19 @@ const ping = {
       // parameter to a different value MUST be rejected as an invalid parameter value. If an empty string is
       // specified, the CPE MUST use the interface as directed by its routing policy (Forwarding table entries)
       // to determine the appropriate interface.
-      interface === '' || interface.length > 256 ||
-      !(dataBlockSize > 0 && dataBlockSize < 65536) || !(dscp > -1 && dscp < 64) ||
+      simulator.device['InternetGatewayDevice.IPPingDiagnostics.Interface'][1].length > 256 ||
+      !(dataBlockSize >= 0 && dataBlockSize < 65536) || !(dscp > -1 && dscp < 64) ||
       !(parseInt(simulator.device['InternetGatewayDevice.IPPingDiagnostics.Timeout'][1]) > 0) ||
       !(parseInt(simulator.device['InternetGatewayDevice.IPPingDiagnostics.NumberOfRepetitions'][1]) > 0)
     ) {
-      simulatorPing.running = setTimeout(() => {
+      finish(simulator, 'ping', (simulator) => {
         simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] = 'Error_Other';
-        simulator.startSession('8 Diagnostics Complete');
-      }, 50);
+      }, 50)
       return;
     }
 
     // all parameters are valid.
-    simulatorPing.running = setTimeout(async () => {
-      await simulatorPing.result(simulator);
-      simulator.startSession('8 Diagnostics Complete');
-    }, 1000);
+    finish(simulator, 'ping', simulator.diagnosticsStates.ping.result, 1000);
     // After the diagnostic is complete, the value of all result parameters (all read-only parameters in this
     // object) MUST be retained by the CPE until either this diagnostic is run again, or the CPE reboots.
   },

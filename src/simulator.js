@@ -63,7 +63,7 @@ class InvalidTaskNameError extends Error {
 
 
 class Simulator extends EventEmitter {
-  device; serialNumber; macaddr; acsUrl; verbose; periodicInformsDisabled;
+  device; serialNumber; mac; acsUrl; verbose; periodicInformsDisabled;
   requestOptions; http; httpAgent; basicAuth; server;
   nextInformTimeout; pendingInform;
   pending = [];
@@ -83,11 +83,11 @@ class Simulator extends EventEmitter {
   // error: when a connection error happens or when a task name is invalid.
     // event passes an error object.
 
-  constructor(device, serialNumber, macaddr, acsUrl, verbose, periodicInformsDisabled) {
+  constructor(device, serialNumber, mac, acsUrl, verbose, periodicInformsDisabled) {
     super();
     this.device = device;
     this.serialNumber = serialNumber;
-    this.macaddr = macaddr;
+    this.mac = mac;
     this.acsUrl = acsUrl || 'http://127.0.0.1:57547/';
     this.verbose = verbose;
     this.periodicInformsDisabled = periodicInformsDisabled; // controls sending periodic informs or not.
@@ -143,7 +143,7 @@ class Simulator extends EventEmitter {
       this.device["InternetGatewayDevice.DeviceInfo.SerialNumber"][1] = this.serialNumber;
 
     if (this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"])
-      this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"][1] = this.macaddr;
+      this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"][1] = this.mac;
 
     let username = "";
     let password = "";
@@ -170,7 +170,7 @@ class Simulator extends EventEmitter {
     // device is ready to receive requests.
     this.emit('started');
 
-    await this.startSession("1 BOOT");
+    await this.startSession();
     // device has already informed, to ACS, that it is online and has already 
     // received pending tasks from ACS.
     this.emit('ready');
@@ -241,7 +241,7 @@ class Simulator extends EventEmitter {
       await this.sendRequest(xml);
       await this.cpeRequest();
     } catch (e) {
-      console.log('Simulator internal error', e);
+      console.log('Simulator internal error.', e);
     }
   }
 
@@ -251,7 +251,7 @@ class Simulator extends EventEmitter {
       const requestId = Math.random().toString(36).slice(-8);
       const body = await pendingTask();
       let xml = createSoapDocument(requestId, body);
-      await this.sendRequest(xml)
+      await this.sendRequest(xml);
     }
     let receivedXml = await this.sendRequest(null);
     await this.handleMethod(receivedXml);
@@ -334,20 +334,6 @@ class Simulator extends EventEmitter {
     });
   }
 
-  // sets a timeout to send a periodic inform using configured inform interval.
-  setNextPeriodicInform() {
-    let informInterval = 10;
-    if (this.device["Device.ManagementServer.PeriodicInformInterval"])
-      informInterval = parseInt(this.device["Device.ManagementServer.PeriodicInformInterval"][1]);
-    else if (this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"])
-      informInterval = parseInt(this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"][1]);
-
-    this.nextInformTimeout = setTimeout(
-      this.startSession.bind(this),
-      this.pendingInform ? 0 : 1000 * informInterval,
-    );
-  }
-
   async handleMethod(xml) {
     if (!xml) {
       this.httpAgent.destroy();
@@ -402,13 +388,28 @@ class Simulator extends EventEmitter {
     await this.handleMethod(receivedXml);
   }
 
+  // sets a timeout to send a periodic inform using configured inform interval.
+  setNextPeriodicInform() {
+    let informInterval = 10;
+    if (this.device["Device.ManagementServer.PeriodicInformInterval"])
+      informInterval = parseInt(this.device["Device.ManagementServer.PeriodicInformInterval"][1]);
+    else if (this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"])
+      informInterval = parseInt(this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"][1]);
+
+    this.nextInformTimeout = setTimeout(
+      this.startSession.bind(this),
+      this.pendingInform ? 0 : 1000 * informInterval,
+    );
+  }
+
   setResultForDiagnostic(name, result='default') {
     const diagnostic = diagnostics[name];
     if (!diagnostic) {
       return `Simulator ${this.serialNumber} has no diagnostic named '${name}'.`;
     }
 
-    if (this.diagnosticsStates[name].running && this.diagnosticsStates[name].running._destroyed === false) {
+    const state = this.diagnosticsStates[name];
+    if (state.running && state.running._destroyed === false) {
       console.log(`Simulator ${this.serialNumber} warning: '${name}' diagnostic already running. `+
         `You might want to set the expected result before initiating the diagnostic.`);
     }
@@ -419,7 +420,7 @@ class Simulator extends EventEmitter {
         `that can be expected for a '${name}' diagnostic.`
     }
 
-    this.diagnosticsStates[name].result = nextResultFunc;
+    state.result = nextResultFunc;
   }
 }
 
