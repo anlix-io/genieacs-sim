@@ -106,10 +106,10 @@ class Simulator extends EventEmitter {
       this.periodicInformsDisabled = !bool; // variable name represents a negation.
     }
 
-    if (this.periodicInformsDisabled) { // if on and should be off clear timeout.
+    if (this.periodicInformsDisabled) { // if on and should be off, clears timeout.
       clearTimeout(this.nextInformTimeout);
-      this.nextInformTimeout = null;
-    } else if (!this.nextInformTimeout) { // if off and should be on, set next.
+      this.nextInformTimeout = undefined;
+    } else if (!this.nextInformTimeout) { // if off and should be on, sets next.
       this.setNextPeriodicInform();
     }
   }
@@ -225,16 +225,11 @@ class Simulator extends EventEmitter {
 
   async startSession(event) {
     // A session is ongoing when nextInformTimeout === null
-    if (this.nextInformTimeout === null) {
-      this.pendingInform = true;
-      return;
-    }
-
-    clearTimeout(this.nextInformTimeout);
+    if (this.nextInformTimeout === null) return;
+    clearTimeout(this.nextInformTimeout); // clears in case there is an scheduled session.
     this.nextInformTimeout = null;
-    this.pendingInform = false;
-    const requestId = Math.random().toString(36).slice(-8);
 
+    const requestId = Math.random().toString(36).slice(-8);
     try {
       let body = methods.inform(this, event);
       let xml = createSoapDocument(requestId, body);
@@ -394,16 +389,16 @@ class Simulator extends EventEmitter {
 
   // sets a timeout to send a periodic inform using configured inform interval.
   setNextPeriodicInform() {
+    // if there's a timeout already running, we won't set another.
+    if (this.nextInformTimeout) return;
+
     let informInterval = 10;
     if (this.device["Device.ManagementServer.PeriodicInformInterval"])
       informInterval = parseInt(this.device["Device.ManagementServer.PeriodicInformInterval"][1]);
     else if (this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"])
       informInterval = parseInt(this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"][1]);
 
-    this.nextInformTimeout = setTimeout(
-      this.startSession.bind(this),
-      this.pendingInform ? 0 : 1000 * informInterval,
-    );
+    this.nextInformTimeout = setTimeout(this.startSession.bind(this), 1000 * informInterval);
   }
 
   // Given a 'result' key and a diagnostic 'name', sets next diagnostic result for the function that
