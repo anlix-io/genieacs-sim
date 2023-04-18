@@ -98,7 +98,7 @@ class Simulator extends EventEmitter {
     }
   }
 
-  // turn on, off or toggles periodic informs.
+  // turns on, off or toggles periodic informs.
   setPeriodicInforms(bool) {
     if (bool === undefined) { // toggling value.
       this.periodicInformsDisabled = !this.periodicInformsDisabled;
@@ -120,7 +120,7 @@ class Simulator extends EventEmitter {
     for (let key in this.diagnosticsStates) clearTimeout(this.diagnosticsStates[key].running);
     if (this.nextInformTimeout) {
       clearTimeout(this.nextInformTimeout);
-      this.nextInformTimeout = null;
+      this.nextInformTimeout = undefined;
     }
     if (this.server) {
       await new Promise((resolve) => this.server.close(resolve));
@@ -337,8 +337,12 @@ class Simulator extends EventEmitter {
   async handleMethod(xml) {
     if (!xml) {
       this.httpAgent.destroy();
-      if (this.periodicInformsDisabled) return; // prevents periodic informs during controlled tests.
-      this.setNextPeriodicInform();
+      if (this.periodicInformsDisabled) { // prevents periodic informs during controlled tests.
+        this.startSession();
+        this.nextInformTimeout = undefined;
+      } else {
+        this.setNextPeriodicInform();
+      }
       return;
     }
 
@@ -402,6 +406,8 @@ class Simulator extends EventEmitter {
     );
   }
 
+  // Given a 'result' key and a diagnostic 'name', sets next diagnostic result for the function that
+  // represents that key. In case of error, returns a string containing the error message, else returns nothing.
   setResultForDiagnostic(name, result='default') {
     const diagnostic = diagnostics[name];
     if (!diagnostic) {
