@@ -194,22 +194,12 @@ class Simulator extends EventEmitter {
         socket.end();
       })
       .on("close", () => {
-        let connectionRequestUrl = `http://${ip}:${port}/`;
+        const connectionRequestUrl = `http://${ip}:${port}/`;
 
         this.server = this.http.createServer((req, res) => {
           if (this.verbose) console.log(`Simulator ${this.serialNumber} got connection request`);
-
-          let body = '';
-          req.on('readable', () => {
-            body += req.read();
-          }).on('end', () => {
-            res.end();
-            req.body = body.toString(); // usually it's just 'null'.
-            this.emit('requested', req);
-          }).on('error', (e) => {
-            this.emit('error', e)
-          });
-
+          res.end();
+          this.emit('requested');
           this.startSession("6 CONNECTION REQUEST");
         }).listen(port, ip, (err) => {
           if (err) throw err;

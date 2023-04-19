@@ -67,7 +67,7 @@ if (cluster.isMaster) {
     console.error(e);
     process.exit(1);
   // }).on('requested', (request) => {
-  //   console.log(`- RECEIVED REQUEST BODY '${formatXML(request.body)}'.`);
+  //   console.log(`- RECEIVED REQUEST FROM ACS.`);
   // }).on('response', (response) => {
   //   console.log(`- RECEIVED RESPONSE BODY '${formatXML(response.body)}'.`);
   // }).on('sent', (request) => {
