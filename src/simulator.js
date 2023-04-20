@@ -216,30 +216,46 @@ class Simulator extends EventEmitter {
   async startSession(event) {
     // A session is ongoing when nextInformTimeout === null
     if (this.nextInformTimeout === null) return;
-    clearTimeout(this.nextInformTimeout); // clears in case there is an scheduled session.
+    clearTimeout(this.nextInformTimeout); // clears timeout in case there is an scheduled session.
     this.nextInformTimeout = null;
 
-    const requestId = Math.random().toString(36).slice(-8);
     try {
       let body = methods.inform(this, event);
-      let xml = createSoapDocument(requestId, body);
-      await this.sendRequest(xml);
+      await this.sendNewRequestWith(body);
       await this.cpeRequest();
     } catch (e) {
       console.log('Simulator internal error.', e);
     }
+
+    this.nextInformTimeout = undefined; // soonest point where session has ended;
+
+    // prevents periodic informs during controlled tests.
+    if (this.periodicInformsDisabled) return;
+    this.setNextPeriodicInform();
   }
 
   async cpeRequest() {
-    let pendingTask;
-    while (pendingTask = this.pending.shift()) {
-      const requestId = Math.random().toString(36).slice(-8);
-      const body = await pendingTask();
-      let xml = createSoapDocument(requestId, body);
-      await this.sendRequest(xml);
+    let emptyPending = false;
+    while (true) {
+      let pendingToSend = this.pending.shift();
+      if (pendingToSend) {
+        emptyPending = false;
+        await pendingToSend((body) => this.sendNewRequestWith(body));
+        continue;
+      }
+
+      if (emptyPending) break;
+      emptyPending = true;
+      const receivedXml = await this.sendRequest(null);
+      await this.handleMethod(receivedXml);
     }
-    let receivedXml = await this.sendRequest(null);
-    await this.handleMethod(receivedXml);
+  }
+
+  // puts given content into SOAP and sends it in a new request using a new request ID.
+  async sendNewRequestWith(body) {
+    const requestId = Math.random().toString(36).slice(-8);
+    let xml = createSoapDocument(requestId, body);
+    return this.sendRequest(xml);
   }
 
   async sendRequest(xml) {
@@ -322,12 +338,6 @@ class Simulator extends EventEmitter {
   async handleMethod(xml) {
     if (!xml) {
       this.httpAgent.destroy();
-      if (this.periodicInformsDisabled) { // prevents periodic informs during controlled tests.
-        this.startSession();
-        this.nextInformTimeout = undefined;
-      } else {
-        this.setNextPeriodicInform();
-      }
       return;
     }
 
@@ -380,7 +390,7 @@ class Simulator extends EventEmitter {
   // sets a timeout to send a periodic inform using configured inform interval.
   setNextPeriodicInform() {
     // if there's a timeout already running, we won't set another.
-    if (this.nextInformTimeout) return;
+    if (this.nextInformTimeout) clearTimeout(this.nextInformTimeout);
 
     let informInterval = 10;
     if (this.device["Device.ManagementServer.PeriodicInformInterval"])

@@ -396,7 +396,7 @@ function Download(simulator, request) {
 
   const startTime = new Date();
 
-  simulator.pending.push(async function() {
+  simulator.pending.push(async (sendNewRequestWith) => {
     let fault = xmlUtils.node("FaultStruct", {}, [
       xmlUtils.node("FaultCode", {}, faultCode),
       xmlUtils.node("FaultString", {}, xmlParser.encodeEntities(faultString))
@@ -407,7 +407,7 @@ function Download(simulator, request) {
       xmlUtils.node("CompleteTime", {}, new Date().toISOString()),
       fault
     ]);
-    return request;
+    return sendNewRequestWith(request);
   });
 
   let response = xmlUtils.node("cwmp:DownloadResponse", {}, [

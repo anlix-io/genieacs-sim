@@ -1,8 +1,22 @@
-function finish(simulator, name, func, afterMilliseconds) {
+const methods = require("./methods");
+
+async function finish(simulator, name, func, afterMilliseconds) {
   simulator.diagnosticsStates[name].running = setTimeout(async () => {
+    // executing diagnostic result.
     await func(simulator);
-    await simulator.startSession('8 DIAGNOSTICS COMPLETE');
-    simulator.emit('diagnostic', name);
+
+    if (simulator.nextInformTimeout !== null) {
+      simulator.startSession('8 DIAGNOSTICS COMPLETE');
+      simulator.emit('diagnostic', name);
+      return;
+    }
+
+    // adding inform message body content to pending queue.
+    simulator.pending.push(async (send) => {
+      const body = methods.inform(simulator, '8 DIAGNOSTICS COMPLETE');
+      await send(body); // callback to send content.
+      simulator.emit('diagnostic', name); // sent diagnostic completion event to ACS and got a response.
+    });
   }, afterMilliseconds);
 }
 
@@ -66,7 +80,7 @@ const ping = {
       // specified, the CPE MUST use the interface as directed by its routing policy (Forwarding table entries)
       // to determine the appropriate interface.
       simulator.device['InternetGatewayDevice.IPPingDiagnostics.Interface'][1].length > 256 ||
-      !(dataBlockSize >= 0 && dataBlockSize < 65536) || !(dscp > -1 && dscp < 64) ||
+      !(dataBlockSize >= 1 && dataBlockSize < 65536) || !(dscp > -1 && dscp < 64) ||
       !(parseInt(simulator.device['InternetGatewayDevice.IPPingDiagnostics.Timeout'][1]) > 0) ||
       !(parseInt(simulator.device['InternetGatewayDevice.IPPingDiagnostics.NumberOfRepetitions'][1]) > 0)
     ) {
