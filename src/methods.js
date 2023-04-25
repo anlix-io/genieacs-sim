@@ -4,6 +4,7 @@ const http = require("http");
 const https = require("https");
 const xmlParser = require("./xml-parser");
 const xmlUtils = require("./xml-utils");
+const diagnostics = require("./diagnostics");
 
 const INFORM_PARAMS = [
   "Device.DeviceInfo.SpecVersion",
@@ -263,6 +264,7 @@ function SetParameterValues(simulator, request) {
   const device = simulator.device;
   let parameterValues = request.children[0].children;
 
+  const modified = {}; // received parameters to be set.
   for (let p of parameterValues) {
     let name, value;
     for (let c of p.children) {
@@ -279,6 +281,13 @@ function SetParameterValues(simulator, request) {
 
     device[name][1] = xmlParser.decodeEntities(value.text);
     device[name][2] = xmlParser.parseAttrs(value.attrs).find(a => a.localName === "type").value;
+    modified[name] = true;
+  }
+
+  // running each diagnostic logic.
+  // their logic includes whether they have to be executed or not.
+  for (let key in diagnostics) {
+    diagnostics[key].run(simulator, modified);
   }
 
   let response = xmlUtils.node("cwmp:SetParameterValuesResponse", {}, xmlUtils.node("Status", {}, "0"));
@@ -387,7 +396,7 @@ function Download(simulator, request) {
 
   const startTime = new Date();
 
-  simulator.pending.push(function() {
+  simulator.pending.push(async (sendNewRequestWith) => {
     let fault = xmlUtils.node("FaultStruct", {}, [
       xmlUtils.node("FaultCode", {}, faultCode),
       xmlUtils.node("FaultString", {}, xmlParser.encodeEntities(faultString))
@@ -398,7 +407,7 @@ function Download(simulator, request) {
       xmlUtils.node("CompleteTime", {}, new Date().toISOString()),
       fault
     ]);
-    return request;
+    return sendNewRequestWith(request);
   });
 
   let response = xmlUtils.node("cwmp:DownloadResponse", {}, [
