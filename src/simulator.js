@@ -68,6 +68,7 @@ class Simulator extends EventEmitter {
   nextInformTimeout; pendingInform;
   pending = [];
   diagnosticsStates = {};
+  diagnosticsQueue = [];
 
   // simulator emits the following events
   // started: after it's already listening for connection requests from ACS.
@@ -221,13 +222,15 @@ class Simulator extends EventEmitter {
 
     try {
       let body = methods.inform(this, event);
-      await this.sendNewRequestWith(body);
+      await this.sendRequest(body);
       await this.cpeRequest();
     } catch (e) {
       console.log('Simulator internal error.', e);
     }
 
-    this.nextInformTimeout = undefined; // soonest point where session has ended;
+    this.nextInformTimeout = undefined; // soonest point where session has ended.
+
+    this.runRequestedDiagnostics();
 
     // prevents periodic informs during controlled tests.
     if (this.periodicInformsDisabled) return;
@@ -240,7 +243,7 @@ class Simulator extends EventEmitter {
       let pendingToSend = this.pending.shift();
       if (pendingToSend) {
         emptyPending = false;
-        await pendingToSend((body) => this.sendNewRequestWith(body));
+        await pendingToSend((body) => this.sendRequest(body));
         continue;
       }
 
@@ -251,16 +254,11 @@ class Simulator extends EventEmitter {
     }
   }
 
-  // puts given content into SOAP and sends it in a new request using a new request ID.
-  async sendNewRequestWith(body) {
-    const requestId = Math.random().toString(36).slice(-8);
-    let xml = createSoapDocument(requestId, body);
-    return this.sendRequest(xml);
-  }
-
-  async sendRequest(xml) {
+  async sendRequest(content, requestId) {
     let headers = {};
-    let body = xml || "";
+    if (!requestId) requestId = Math.random().toString(36).slice(-8);
+    let xml = content ? createSoapDocument(requestId, content) : undefined;
+    let body = xml ||  "";
 
     headers["Content-Length"] = body.length;
     headers["Content-Type"] = "text/xml; charset=\"utf-8\"";
@@ -374,14 +372,12 @@ class Simulator extends EventEmitter {
     if (!method) {
       this.emit('error', new InvalidTaskNameError(requestElement.localName, requestElement));
       let body = createFaultResponse(9000, "Method not supported");
-      let xmlToSend = createSoapDocument(requestId, body);
-      let receivedXml = await this.sendRequest(xmlToSend);
+      let receivedXml = await this.sendRequest(body, requestId);
       return this.handleMethod(receivedXml);
     }
 
     let body = method(this, requestElement);
-    let xmlToSend = createSoapDocument(requestId, body);
-    let receivedXml = await this.sendRequest(xmlToSend);
+    let receivedXml = await this.sendRequest(body, requestId);
     // already received, processed, sent values back and got response from ACS.
     this.emit('task', requestElement);
     await this.handleMethod(receivedXml);
@@ -422,6 +418,16 @@ class Simulator extends EventEmitter {
     }
 
     state.result = nextResultFunc;
+  }
+
+  async runRequestedDiagnostics() {
+    let diagnostic;
+    while (diagnostic = this.diagnosticsQueue.shift()) {
+      console.log(`-- [${new Date().toISOString()}] executing a diagnostic`)
+      await diagnostic()
+        .catch(() => {}); // interrupted diagnostics are rejected.
+      console.log(`-- [${new Date().toISOString()}] finished a diagnostic`)
+    }
   }
 }
 

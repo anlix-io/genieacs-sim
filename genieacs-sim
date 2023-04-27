@@ -62,7 +62,7 @@ if (cluster.isMaster) {
   const serialNumber = process.env["SERIAL_NUMBER"];
   const macAddr = process.env["MAC_ADDR"];
 
-  function extractXmlContent(full) {
+  function extractXmlContent(xml) {
     if (!xml) return '';
     let content = formatXML(xml).match(/<cwmp:\w+>[^]+(\n\t+)<\/cwmp:\w+>/);
     if (!content) return;
