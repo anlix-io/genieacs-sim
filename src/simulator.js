@@ -6,6 +6,7 @@ const xmlParser = require("./xml-parser");
 const xmlUtils = require("./xml-utils");
 const methods = require("./methods");
 const diagnostics = require("./diagnostics");
+const manipulation = require("./manipulation");
 
 const NAMESPACES = {
   "soap-enc": "http://schemas.xmlsoap.org/soap/encoding/",
@@ -96,6 +97,10 @@ class Simulator extends EventEmitter {
     for (let key in diagnostics) {
       this.diagnosticsStates[key] = {}; // initializing diagnostic state attributes.
       this.setResultForDiagnostic(key); // setting default result for diagnostic.
+    }
+
+    for (let key in manipulation) {
+      this[key] = manipulation[key].bind(this);
     }
   }
 
