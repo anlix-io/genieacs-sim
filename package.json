@@ -1,6 +1,6 @@
 {
   "name": "@anlix-io/genieacs-sim",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "TR-069 client simulator for GenieACS",
   "main": "src/main.js",
   "scripts": {
