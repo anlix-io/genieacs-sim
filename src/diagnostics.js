@@ -1,34 +1,66 @@
 const methods = require("./methods");
 
-async function finish(simulator, name, func, afterMilliseconds) {
-  simulator.diagnosticsStates[name].running = setTimeout(async () => {
-    // executing diagnostic result.
-    await func(simulator);
+const event = '8 DIAGNOSTICS COMPLETE';
 
+async function finish(simulator, name, func, afterMilliseconds, resolve) {
+  // reference to object containing this diagnostic's execution data.
+  const state = simulator.diagnosticsStates[name];
+
+  // executing diagnostic logic after 'afterMilliseconds' and sending results.
+  state.running = setTimeout(async () => {
+    await func(simulator); // executing diagnostic result.
+    state.running = undefined; // clearing diagnostic's timeout object.
+    state.reject = undefined; // clearing diagnostic's reject function.
+
+    // if there isn't an on going session.
     if (simulator.nextInformTimeout !== null) {
-      simulator.startSession('8 DIAGNOSTICS COMPLETE');
-      simulator.emit('diagnostic', name);
+      await simulator.startSession(event); // creating a new session where diagnostic complete message is sent.
+      resolve(); // next diagnostic can be executed after calling 'resolve()'.
+      simulator.emit('diagnostic', name); // sent diagnostic completion event to ACS and got a response.
       return;
     }
 
-    // adding inform message body content to pending queue.
+    // if there is an on going session.
+    // adding a send call of this diagnostic complete message event content to pending queue.
     simulator.pending.push(async (send) => {
-      const body = methods.inform(simulator, '8 DIAGNOSTICS COMPLETE');
-      await send(body); // callback to send content.
+      const body = methods.inform(simulator, event); // building a diagnostic complete message.
+      await send(body); // sending content and waiting response.
       simulator.emit('diagnostic', name); // sent diagnostic completion event to ACS and got a response.
     });
+    resolve(); // next diagnostic can be executed after calling 'resolve()'.
   }, afterMilliseconds);
 }
 
+async function queue(simulator, name, func, afterMilliseconds) {
+  // When requested, the CPE SHOULD wait until after completion of the communication session
+  // with the ACS before starting the diagnostic.
+  simulator.diagnosticsQueue.push(() =>
+    new Promise((resolve, reject) => {
+      simulator.diagnosticsStates[name].reject = reject; // saving reject so we can interrupt diagnostic.
+      finish(simulator, name, func, afterMilliseconds, resolve);
+    })
+  );
+}
+
+// clears diagnostic timeout and rejects the diagnostic.
+function interrupt(simulator, name) {
+  const state = simulator.diagnosticsStates[name];
+  clearTimeout(state.running);
+  if (state.reject) {
+    state.reject();
+    state.reject = undefined;
+  }
+  state.running = undefined;
+}
+
 const ping = {
-  // executes Ping Diagnostic logic.
-  run: function(simulator, modified) {
+  run: function(simulator, modified) { // executes Ping Diagnostic logic.
     if (modified['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'] === undefined) {
       // Modifying any of the writable parameters except for 'DiganosticState' MUST result 
       // in its value being set to "None".
       if (
-        modified['InternetGatewayDevice.IPPingDiagnostics.Host'] !== undefined ||
         modified['InternetGatewayDevice.IPPingDiagnostics.Interface'] !== undefined ||
+        modified['InternetGatewayDevice.IPPingDiagnostics.Host'] !== undefined ||
         modified['InternetGatewayDevice.IPPingDiagnostics.Timeout'] !== undefined ||
         modified['InternetGatewayDevice.IPPingDiagnostics.NumberOfRepetitions'] !== undefined ||
         modified['InternetGatewayDevice.IPPingDiagnostics.DataBlockSize'] !== undefined ||
@@ -36,7 +68,7 @@ const ping = {
       ) {
         // While the test is in progress, modifying any of the writable parameters except for
         // 'DiganosticState' MUST result in the test being terminated and its value being set to "None".
-        clearTimeout(simulator.diagnosticsStates.ping.running);
+        interrupt(simulator, 'ping');
         simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] = 'None';
       }
       // if no ping parameter has been modified, this diagnostic is not executed.
@@ -53,7 +85,7 @@ const ping = {
     // While the test is in progress, setting 'DiganosticState' to "Requested" (and possibly modifying
     // other writable parameters in this object) MUST result in the test being terminated and then
     // restarted using the current values of the test parameters.
-    clearTimeout(simulator.diagnosticsStates.ping.running);
+    interrupt(simulator, 'ping');
 
     // When the test is completed, the value of 'DiganosticState' MUST be either "Complete" or
     // one of the Error values.
@@ -66,7 +98,7 @@ const ping = {
     const host = simulator.device['InternetGatewayDevice.IPPingDiagnostics.Host'][1];
     // checking host.
     if (host === '' || host.length > 256) {
-      finish(simulator, 'ping', (simulator) => {
+      queue(simulator, 'ping', (simulator) => {
         simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] = 'Error_CannotResolveHostName';
       }, 50);
       return;
@@ -84,22 +116,20 @@ const ping = {
       !(parseInt(simulator.device['InternetGatewayDevice.IPPingDiagnostics.Timeout'][1]) > 0) ||
       !(parseInt(simulator.device['InternetGatewayDevice.IPPingDiagnostics.NumberOfRepetitions'][1]) > 0)
     ) {
-      finish(simulator, 'ping', (simulator) => {
+      queue(simulator, 'ping', (simulator) => {
         simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] = 'Error_Other';
       }, 50)
       return;
     }
 
     // all parameters are valid.
-    finish(simulator, 'ping', simulator.diagnosticsStates.ping.result, 1000);
+    queue(simulator, 'ping', simulator.diagnosticsStates.ping.result, 1000);
     // After the diagnostic is complete, the value of all result parameters (all read-only parameters in this
     // object) MUST be retained by the CPE until either this diagnostic is run again, or the CPE reboots.
   },
 
-  results: {
-    default: function(simulator) {
-      // When requested, the CPE SHOULD wait until after completion of the communication session with the
-      // ACS before starting the diagnostic.
+  results: { // possible results for a ping diagnostic.
+    default: function(simulator) { // successful ping result.
       simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] = 'Complete';
       simulator.device['InternetGatewayDevice.IPPingDiagnostics.SuccessCount'][1] =
         simulator.device['InternetGatewayDevice.IPPingDiagnostics.NumberOfRepetitions'][1];
@@ -108,8 +138,7 @@ const ping = {
       simulator.device['InternetGatewayDevice.IPPingDiagnostics.MinimumResponseTime'][1] = '9';
       simulator.device['InternetGatewayDevice.IPPingDiagnostics.MaximumResponseTime'][1] = '14';
     },
-    error: function(simulator) {
-      // forced error.
+    error: function(simulator) { // internal error.
       simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] = 'Error_Internal';
     },
   },
