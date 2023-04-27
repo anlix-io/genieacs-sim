@@ -7,12 +7,13 @@ exports.addLanDevice = function (lanDevice) {
   const index = parseInt(numberOfEntriesNode[1])+1; // current entry number is 'number of entries'+1.
   numberOfEntriesNode[1] = index.toString(); // saving incremented number of entries.
   
-  // 'InternetGatewayDevice.LANDevice.1.Hosts.Host' already exists, so we don't have to create it.
+  // 'InternetGatewayDevice.LANDevice.1.Hosts.Host' already exists,
+  // so we don't have to create it and, also, we seem to not need it.
   path += `Host.${index}.`;
-  this.device[path] = [true];
+  this.device[path] = [true]; // creating parent node for host in i-th index.
   let v = lanDevice['Active']; // taking value.
-  if (v && (v.constructor === Boolean || v.constructor === String)) {
-  	this.device[path+'Active'] = [false, v.toString(), 'xsd:boolean'];
+  if (v && v.constructor === Boolean) { // checking 'lanDevice' attribute's data type.
+  	this.device[path+'Active'] = [false, v.toString(), 'xsd:boolean']; // adding key value pair for attribute.
   }
   v = lanDevice['AddressSource'];
   if (v && v.constructor === String) this.device[path+'AddressSource'] = [false, v, 'xsd:string'];
