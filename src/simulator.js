@@ -68,8 +68,9 @@ class Simulator extends EventEmitter {
   requestOptions; http; httpAgent; basicAuth; server;
   nextInformTimeout; pendingInform;
   pending = [];
-  diagnosticsStates = {};
-  diagnosticsQueue = [];
+  diagnosticsStates = {}; // state data for available diagnostics.
+  diagnosticQueue = []; // queue for diagnostic waiting to be executed.
+  diagnosticSlots = 1; // only one diagnostic can run in any given time.
 
   // simulator emits the following events
   // started: after it's already listening for connection requests from ACS.
@@ -84,6 +85,10 @@ class Simulator extends EventEmitter {
     // event passes an http.IncomingMessage instance as argument.
   // error: when a connection error happens or when a task name is invalid.
     // event passes an error object.
+  // task: when a task is executed fully executed and responded to ACS
+    // event passes the parsed task structure and a tree of objects;
+  // diagnostic: when a diagnostic is finished ACS has been notified.
+   // event passes the name of the finished diagnostic.
 
   constructor(device, serialNumber, mac, acsUrl, verbose, periodicInformsDisabled) {
     super();
@@ -233,13 +238,12 @@ class Simulator extends EventEmitter {
       console.log('Simulator internal error.', e);
     }
 
-    this.nextInformTimeout = undefined; // soonest point where session has ended.
-
-    this.runRequestedDiagnostics();
-
-    // prevents periodic informs during controlled tests.
-    if (this.periodicInformsDisabled) return;
-    this.setNextPeriodicInform();
+    this.nextInformTimeout = undefined; // the soonest point where session has ended.
+    
+    this.runRequestedDiagnostics(); // executing diagnostic after session has ended.
+    
+    if (this.periodicInformsDisabled) return; // prevents periodic informs during controlled tests.
+    this.setNextPeriodicInform(); // setting next inform timeout.
   }
 
   async cpeRequest() {
@@ -254,6 +258,7 @@ class Simulator extends EventEmitter {
 
       if (emptyPending) break;
       emptyPending = true;
+
       const receivedXml = await this.sendRequest(null);
       await this.handleMethod(receivedXml);
     }
@@ -426,12 +431,15 @@ class Simulator extends EventEmitter {
   }
 
   async runRequestedDiagnostics() {
+    // if diagnostic execution is fully occupied we don't execute anything this round.
+    if (!this.diagnosticSlots) return;
+
     let diagnostic;
-    while (diagnostic = this.diagnosticsQueue.shift()) {
-      console.log(`-- [${new Date().toISOString()}] executing a diagnostic`)
+    while (diagnostic = this.diagnosticQueue.shift()) {
+      this.diagnosticSlots--; // consuming a diagnostic execution slot.
       await diagnostic()
         .catch(() => {}); // interrupted diagnostics are rejected.
-      console.log(`-- [${new Date().toISOString()}] finished a diagnostic`)
+      this.diagnosticSlots++; // returning a diagnostic execution slot.
     }
   }
 }
