@@ -34,7 +34,7 @@ async function finish(simulator, name, func, afterMilliseconds, resolve) {
 async function queue(simulator, name, func, afterMilliseconds) {
   // When requested, the CPE SHOULD wait until after completion of the communication session
   // with the ACS before starting the diagnostic.
-  simulator.diagnosticsQueue.push(() =>
+  simulator.diagnosticQueue.push(() =>
     new Promise((resolve, reject) => {
       simulator.diagnosticsStates[name].reject = reject; // saving reject so we can interrupt diagnostic.
       finish(simulator, name, func, afterMilliseconds, resolve);
@@ -123,7 +123,7 @@ const ping = {
     }
 
     // all parameters are valid.
-    queue(simulator, 'ping', simulator.diagnosticsStates.ping.result, 1000);
+    queue(simulator, 'ping', simulator.diagnosticsStates.ping.result, 500);  // small timeout to finish fast.
     // After the diagnostic is complete, the value of all result parameters (all read-only parameters in this
     // object) MUST be retained by the CPE until either this diagnostic is run again, or the CPE reboots.
   },
@@ -144,3 +144,135 @@ const ping = {
   },
 };
 exports.ping = ping;
+
+const traceroute = {
+  run: function(simulator, modified) {
+    if (modified['InternetGatewayDevice.TraceRouteDiagnostics.DiagnosticsState'] === undefined) {
+      if (
+        modified['InternetGatewayDevice.TraceRouteDiagnostics.Interface'] !== undefined ||
+        modified['InternetGatewayDevice.TraceRouteDiagnostics.Host'] !== undefined ||
+        modified['InternetGatewayDevice.TraceRouteDiagnostics.NumberOfTries'] !== undefined ||
+        modified['InternetGatewayDevice.TraceRouteDiagnostics.Timeout'] !== undefined ||
+        modified['InternetGatewayDevice.TraceRouteDiagnostics.DataBlockSize'] !== undefined ||
+        modified['InternetGatewayDevice.TraceRouteDiagnostics.MaxHopCount'] !== undefined
+      ) {
+        interrupt(simulator, 'traceroute');
+        simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.DiagnosticsState'][1] = 'None';
+      }
+      // if no traceroute parameter has been modified, this diagnostic is not executed.
+      return;
+    }
+
+    if (simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.DiagnosticsState'][1] !== 'Requested') return;
+
+    interrupt(simulator, 'traceroute');
+
+    const host = simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.Host'][1];
+    // checking host.
+    if (host === '' || host.length > 256) {
+      queue(simulator, 'traceroute', (simulator) => {
+        simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.DiagnosticsState'][1] = 'Error_CannotResolveHostName';
+      }, 50);
+      return;
+    }
+    const numberOfTries = parseInt(simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.NumberOfTries'][1]);
+    const dataBlockSize = parseInt(simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.DataBlockSize'][1]);
+    const dscp = parseInt(simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.DSCP'][1]);
+    const maxHopCount = parseInt(simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.MaxHopCount'][1]);
+    // checking other parameter's.
+    if (
+      simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.Interface'][1].length > 256 ||
+      numberOfTries < 1 || numberOfTries > 3 ||
+      parseInt(simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.Timeout'][1]) < 1 ||
+      dataBlockSize < 1 || dataBlockSize > 65535 || dscp < 0 || dscp > 63 ||
+      maxHopCount < 1 || maxHopCount > 64
+    ) {
+      queue(simulator, 'traceroute', (simulator) => {
+        simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.DiagnosticsState'][1] = 'Error_MaxHopCountExceeded';
+      }, 50)
+      return;
+    }
+
+    // all parameters are valid.
+    queue(simulator, 'traceroute', simulator.diagnosticsStates.traceroute.result, 500); // small timeout to finish fast.
+  },
+
+  eraseOldResult: function(simulator) { // erasing old results.
+    simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.RouteHopsNumberOfEntries'][1] = '0';
+
+    let hop = 1; // starts from 1.
+    while (true) {
+      const hopRoute = `InternetGatewayDevice.TraceRouteDiagnostics.RouteHops.${hop}.`;
+      if (simulator.device[hopRoute]) {
+        delete simulator.device[hopRoute];
+        delete simulator.device[hopRoute+'HopHost'];
+        delete simulator.device[hopRoute+'HopHostAddress'];
+        delete simulator.device[hopRoute+'HopErrorCode'];
+        delete simulator.device[hopRoute+'HopRTTimes'];
+      } else {
+        delete simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.RouteHops.'];
+        break;
+      }
+      hop++;
+    }
+
+    delete simulator.device._sortedPaths;
+  },
+  produceHopResults: function (simulator, forcedMaxHops=false, amoutOfHops=8) {
+    traceroute.eraseOldResult(simulator);
+
+    let path = 'InternetGatewayDevice.TraceRouteDiagnostics.';
+
+    const maxHops = parseInt(simulator.device[path+'MaxHopCount'][1]);
+    const hops = forcedMaxHops ? maxHops : amoutOfHops; // doing max hops or the given amount of hops.
+
+    simulator.device[path+'DiagnosticsState'][1] = forcedMaxHops ? 'Error_MaxHopCountExceeded' : 'Complete';
+    simulator.device[path+'ResponseTime'][1] = forcedMaxHops ? `${((5+2*hops)*1.025).toFixed(3)}` : '3000';
+    simulator.device[path+'RouteHopsNumberOfEntries'][1] = `${hops}`;
+
+    const host = simulator.device[path+`Host`][1];
+    const tries = parseInt(simulator.device[path+'NumberOfTries'][1]);
+
+    path += 'RouteHops.';
+    simulator.device[path] = [false]; // adding "RouteHops" node to the data model.
+
+    // hop indexes start from 1. 'rtt' is a simulation of the round trip time increase with each following hop.
+    for (let hop = 1, rtt = 5; hop <= hops; hop++, rtt += 5) {
+      const hopPath = path+`${hop}.` // path for the i-th hop.
+      simulator.device[hopPath] = [false]; // creating node for the i-th hop.
+      
+      let hopHost = `hop-${hop}.com`;
+      let hopHostAddress = `123.123.${123+hop}.123`;
+      // if we are not forcing the max amount of hops in the last iteration, that means 
+      // the last iteration has reached the target host.
+      if (!forcedMaxHops && hop === hops-1) {
+        hopHost = host; // we will use the 'Host' attribute as the 'HopHost' value.
+        // And if the 'Host' value is an IP address, 'HopHostAddress' will be empty.
+        if (hopHost.match(/\d{1,3}(\.\d{1,3}){3}/)) hopHostAddress = '';
+        // That way, 'HopHost', in the last hop, will be whatever host has been defined in the 'Host' attribute.
+      }
+      // Result parameter indicating the Host Name if DNS is able to resolve or IP Address of a hop along
+      // the discovered route.
+      simulator.device[hopPath+'HopHost'] = [false, hopHost, 'xsd:string'];
+      // If this parameter is non empty it will contain the last IP address of the host returned for this hop and the
+      // HopHost will contain the Host Name returned from the reverse DNS query.
+      simulator.device[hopPath+'HopHostAddress'] = [false, hopHostAddress, 'xsd:string'];
+      // Contains the error code returned for this hop. This code is directly from the ICMP CODE field.
+      simulator.device[hopPath+'HopErrorCode'] = [false, 0, 'xsd:unsignedInt'];
+      // Contains the comma separated list of one or more round trip times in milliseconds (one for each
+      // repetition) for this hop.
+      let hopRtTimes = [(rtt*1.01).toFixed(3), (rtt*0.975).toFixed(3), (rtt*1.025).toFixed(3)].slice(0, tries).toString();
+      simulator.device[hopPath+'HopRTTimes'] = [false, hopRtTimes, 'xsd:string'];
+    }
+  },
+
+  results: {
+    default: function(simulator) {
+      traceroute.produceHopResults(simulator, false, 8);
+    },
+    error: function(simulator) { // max hop count exceeded error.
+      traceroute.produceHopResults(simulator, true)
+    },
+  }
+};
+exports.traceroute = traceroute;
