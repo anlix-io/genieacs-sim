@@ -396,7 +396,7 @@ function Download(simulator, request) {
 
   const startTime = new Date();
 
-  simulator.pending.push(async (send) => {
+  simulator.pendingMessages.push(async (send) => {
     let fault = xmlUtils.node("FaultStruct", {}, [
       xmlUtils.node("FaultCode", {}, faultCode),
       xmlUtils.node("FaultString", {}, xmlParser.encodeEntities(faultString))

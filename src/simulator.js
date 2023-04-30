@@ -66,8 +66,9 @@ class InvalidTaskNameError extends Error {
 class Simulator extends EventEmitter {
   device; serialNumber; mac; acsUrl; verbose; periodicInformsDisabled;
   requestOptions; http; httpAgent; basicAuth; server;
-  nextInformTimeout; pendingInform;
-  pending = [];
+  nextInformTimeout; pendingAcsRequest;
+  pendingMessages = [];
+  pendingEvents = [];
   diagnosticsStates = {}; // state data for available diagnostics.
   diagnosticQueue = []; // queue for diagnostic waiting to be executed.
   diagnosticSlots = 1; // only one diagnostic can run in any given time.
@@ -136,7 +137,6 @@ class Simulator extends EventEmitter {
     if (this.server) {
       await new Promise((resolve) => this.server.close(resolve));
       this.server = undefined;
-      return;
     }
   }
 
@@ -226,7 +226,11 @@ class Simulator extends EventEmitter {
 
   async startSession(event) {
     // A session is ongoing when nextInformTimeout === null
-    if (this.nextInformTimeout === null) return;
+    if (this.nextInformTimeout === null) {
+      this.pendingAcsRequest = true;
+      return;
+    }
+    this.pendingAcsRequest = false;
     clearTimeout(this.nextInformTimeout); // clears timeout in case there is an scheduled session.
     this.nextInformTimeout = null;
 
@@ -240,28 +244,20 @@ class Simulator extends EventEmitter {
 
     this.nextInformTimeout = undefined; // the soonest point where session has ended.
     
+    this.setNextPeriodicInform(); // sets timeout for next periodic inform.
+    
     this.runRequestedDiagnostics(); // executing diagnostic after session has ended.
     
-    if (this.periodicInformsDisabled) return; // prevents periodic informs during controlled tests.
-    this.setNextPeriodicInform(); // setting next inform timeout.
+    this.runPendingEvents(); // starting sessions that were waiting current session to finish.
   }
 
   async cpeRequest() {
-    let emptyPending = false;
-    while (true) {
-      let pendingToSend = this.pending.shift();
-      if (pendingToSend) {
-        emptyPending = false;
-        await pendingToSend((body) => this.sendRequest(body));
-        continue;
-      }
-
-      if (emptyPending) break;
-      emptyPending = true;
-
-      const receivedXml = await this.sendRequest(null);
-      await this.handleMethod(receivedXml);
+    let pendingMessage;
+    while (pendingMessage = this.pendingMessages.shift()) {
+      await pendingMessage((body) => this.sendRequest(body));
     }
+    const receivedXml = await this.sendRequest(null);
+    await this.handleMethod(receivedXml);
   }
 
   async sendRequest(content, requestId) {
@@ -395,8 +391,14 @@ class Simulator extends EventEmitter {
 
   // sets a timeout to send a periodic inform using configured inform interval.
   setNextPeriodicInform() {
-    // if there's a timeout already running, we won't set another.
+    // if there's a timeout already running, we'll stop it and set another.
     if (this.nextInformTimeout) clearTimeout(this.nextInformTimeout);
+
+    // if periodic inform is disabled, we don't put 'startSession()' in a timeout.
+    if (this.periodicInformsDisabled) {
+      if (this.pendingAcsRequest) this.startSession();
+      return;
+    }
 
     let informInterval = 10;
     if (this.device["Device.ManagementServer.PeriodicInformInterval"])
@@ -404,7 +406,12 @@ class Simulator extends EventEmitter {
     else if (this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"])
       informInterval = parseInt(this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"][1]);
 
-    this.nextInformTimeout = setTimeout(this.startSession.bind(this), 1000 * informInterval);
+    this.nextInformTimeout = setTimeout(
+      this.startSession.bind(this),
+      this.pendingAcsRequest
+        ? 0 // if ACS sent a request while a session was running, we request the ACS right away
+        : 1000*informInterval, // else we wait 'informInterval'.
+    );
   }
 
   // Given a 'result' key and a diagnostic 'name', sets next diagnostic result for the function that
@@ -440,6 +447,18 @@ class Simulator extends EventEmitter {
       await diagnostic()
         .catch(() => {}); // interrupted diagnostics are rejected.
       this.diagnosticSlots++; // returning a diagnostic execution slot.
+    }
+  }
+
+  async runPendingEvents(eventFunc) {
+    if (eventFunc) this.pendingEvents.push(eventFunc);
+
+    // if there is an on going session.
+    if (this.nextInformTimeout === null) return;
+
+    let pendingEvent;
+    while (pendingEvent = this.pendingEvents.shift()) {
+      await pendingEvent();
     }
   }
 }
