@@ -391,14 +391,14 @@ class Simulator extends EventEmitter {
 
   // sets a timeout to send a periodic inform using configured inform interval.
   setNextPeriodicInform() {
-    // if there's a timeout already running, we'll stop it and set another.
+    // if there's a timeout already running, we'll stop it before setting another.
     if (this.nextInformTimeout) clearTimeout(this.nextInformTimeout);
 
+    // if ACS has sent a request during a session, we start a new session.
+    if (this.pendingAcsRequest) return this.startSession();
+
     // if periodic inform is disabled, we don't put 'startSession()' in a timeout.
-    if (this.periodicInformsDisabled) {
-      if (this.pendingAcsRequest) this.startSession();
-      return;
-    }
+    if (this.periodicInformsDisabled) return;
 
     let informInterval = 10;
     if (this.device["Device.ManagementServer.PeriodicInformInterval"])
@@ -406,12 +406,7 @@ class Simulator extends EventEmitter {
     else if (this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"])
       informInterval = parseInt(this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"][1]);
 
-    this.nextInformTimeout = setTimeout(
-      this.startSession.bind(this),
-      this.pendingAcsRequest
-        ? 0 // if ACS sent a request while a session was running, we request the ACS right away
-        : 1000*informInterval, // else we wait 'informInterval'.
-    );
+    this.nextInformTimeout = setTimeout(this.startSession.bind(this), 1000*informInterval);
   }
 
   // Given a 'result' key and a diagnostic 'name', sets next diagnostic result for the function that
