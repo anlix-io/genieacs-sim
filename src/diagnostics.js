@@ -112,7 +112,7 @@ const ping = {
     }
 
     // all parameters are valid.
-    queue(simulator, 'ping', simulator.diagnosticsStates.ping.result, 500);  // small timeout to finish fast.
+    queue(simulator, 'ping', simulator.diagnosticsStates.ping.result, 2000);  // small timeout to finish fast.
     // After the diagnostic is complete, the value of all result parameters (all read-only parameters in this
     // object) MUST be retained by the CPE until either this diagnostic is run again, or the CPE reboots.
   },
@@ -183,7 +183,7 @@ const traceroute = {
     }
 
     // all parameters are valid.
-    queue(simulator, 'traceroute', simulator.diagnosticsStates.traceroute.result, 500); // small timeout to finish fast.
+    queue(simulator, 'traceroute', simulator.diagnosticsStates.traceroute.result, 2000); // small timeout to finish fast.
   },
 
   eraseOldResult: function(simulator) { // erasing old results.
