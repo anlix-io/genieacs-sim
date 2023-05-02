@@ -12,22 +12,11 @@ async function finish(simulator, name, func, afterMilliseconds, resolve) {
     state.running = undefined; // clearing diagnostic's timeout object.
     state.reject = undefined; // clearing diagnostic's reject function.
 
-    // if there isn't an on going session.
-    if (simulator.nextInformTimeout !== null) {
+    simulator.runPendingEvents(async () => {
       await simulator.startSession(event); // creating a new session where diagnostic complete message is sent.
       resolve(); // next diagnostic can be executed after calling 'resolve()'.
       simulator.emit('diagnostic', name); // sent diagnostic completion event to ACS and got a response.
-      return;
-    }
-
-    // if there is an on going session.
-    // adding a send call of this diagnostic complete message event content to pending queue.
-    simulator.pending.push(async (send) => {
-      const body = methods.inform(simulator, event); // building a diagnostic complete message.
-      await send(body); // sending content and waiting response.
-      simulator.emit('diagnostic', name); // sent diagnostic completion event to ACS and got a response.
     });
-    resolve(); // next diagnostic can be executed after calling 'resolve()'.
   }, afterMilliseconds);
 }
 
