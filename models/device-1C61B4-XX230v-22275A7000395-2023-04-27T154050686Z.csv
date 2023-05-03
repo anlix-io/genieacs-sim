@@ -4379,7 +4379,7 @@ Device.WiFi.MultiAP.X_TrafficSeparation.TsPolicyNumberOfEntries,false,2023-04-26
 Device.WiFi.MultiAP.X_TrafficSeparation.X_TP_TrafficSeparationEthPolicy,true,2023-04-26T18:51:36.573Z,false,2023-04-26T18:51:36.573Z,"",,,,,,
 Device.WiFi.MultiAP.X_TrafficSeparation.X_TP_TsEthPolicyNumberOfEntries,false,2023-04-26T18:51:36.573Z,true,2023-04-26T18:51:36.573Z,"0",xsd:unsignedInt,2023-04-26T18:51:36.577Z,,,,
 Device.WiFi.NeighboringWiFiDiagnostic,true,2023-04-26T18:51:36.573Z,false,2023-04-26T18:51:36.573Z,"",,,,,,
-Device.WiFi.NeighboringWiFiDiagnostic.DiagnosticsState,false,2023-04-26T21:41:59.397Z,true,2023-04-26T21:41:59.397Z,"Completed",xsd:string,2023-04-26T21:41:59.399Z,,,,
+Device.WiFi.NeighboringWiFiDiagnostic.DiagnosticsState,false,2023-04-26T21:41:59.397Z,true,2023-04-26T21:41:59.397Z,"None",xsd:string,2023-04-26T21:41:59.399Z,,,,
 Device.WiFi.NeighboringWiFiDiagnostic.Result,true,2023-04-26T21:41:59.397Z,false,2023-04-26T21:41:59.397Z,"",,,,,,
 Device.WiFi.NeighboringWiFiDiagnostic.Result.1,true,2023-04-26T21:41:59.397Z,false,2023-04-26T21:41:59.397Z,"",,,,,,
 Device.WiFi.NeighboringWiFiDiagnostic.Result.1.BSSID,false,2023-04-26T21:41:59.397Z,false,2023-04-26T21:41:59.397Z,"78:91:E9:08:D6:95",xsd:string,2023-04-26T21:41:59.403Z,,,,
