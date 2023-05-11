@@ -100,6 +100,10 @@ class Simulator extends EventEmitter {
     this.verbose = verbose;
     this.periodicInformsDisabled = periodicInformsDisabled; // controls sending periodic informs or not.
 
+    // defining which cwmp model version this device is using.
+    if (device['InternetGatewayDevice.ManagementServer.URL']) this.TR = 'tr069';
+    else if (device['Device.ManagementServer.URL']) this.TR = 'tr181';
+
     for (let key in diagnostics) {
       this.diagnosticsStates[key] = {}; // initializing diagnostic state attributes.
       this.setResultForDiagnostic(key); // setting default result for diagnostic.
@@ -155,6 +159,8 @@ class Simulator extends EventEmitter {
 
     if (this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"])
       this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"][1] = this.mac;
+    if (this.device["Device.Ethernet.Interface.1.MACAddress"])
+      this.device["Device.Ethernet.Interface.1.MACAddress"][1] = this.mac;
 
     let username = "";
     let password = "";
