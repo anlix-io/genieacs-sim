@@ -2,7 +2,10 @@ exports.addLanDevice = function (lanDevice) {
   if (!lanDevice) return; // returns when no 'lanDevice' given in argument.
   if (!(lanDevice.HostName && lanDevice.IPAddress && lanDevice.MACAddress)) return; // required fields.
 
-  let path = 'InternetGatewayDevice.LANDevice.1.Hosts.';
+  let path = this.TR === 'tr069'
+    ? 'InternetGatewayDevice.LANDevice.1.Hosts.'
+    : 'Device.Hosts.';
+
   const numberOfEntriesNode = this.device[path+'HostNumberOfEntries'];
   const index = parseInt(numberOfEntriesNode[1])+1; // current entry number is 'number of entries'+1.
   numberOfEntriesNode[1] = index.toString(); // saving incremented number of entries.
@@ -23,6 +26,14 @@ exports.addLanDevice = function (lanDevice) {
   if (v && v.constructor === String) this.device[path+'HostName'] = [false, v, 'xsd:string'];
   v = lanDevice['IPAddress'];
   if (v && v.constructor === String) this.device[path+'IPAddress'] = [false, v, 'xsd:string'];
+  v = lanDevice['IPv4AddressNumberOfEntries'];
+  if (v && v.constructor === String) this.device[path+'IPv4AddressNumberOfEntries'] = [false, v, 'xsd:unsignedInt'];
+  v = lanDevice['IPv6Address'];
+  if (v && v.constructor === String) this.device[path+'IPv6Address'] = [false, v, 'xsd:string'];
+  v = lanDevice['IPv6AddressNumberOfEntries'];
+  if (v && v.constructor === String) this.device[path+'IPv6AddressNumberOfEntries'] = [false, v, 'xsd:unsignedInt'];
+  v = lanDevice['IPv6LinkLocal'];
+  if (v && v.constructor === String) this.device[path+'IPv6LinkLocal'] = [false, v, 'xsd:string'];
   v = lanDevice['InterfaceType'];
   if (v && v.constructor === String) this.device[path+'InterfaceType'] = [false, v, 'xsd:string'];
   v = lanDevice['Layer2Interface'];
@@ -31,8 +42,12 @@ exports.addLanDevice = function (lanDevice) {
   if (v && v.constructor === Number) this.device[path+'LeaseTimeRemaining'] = [false, v.toFixed(0), 'xsd:int'];
   v = lanDevice['MACAddress'];
   if (v && v.constructor === String) this.device[path+'MACAddress'] = [false, v, 'xsd:string'];
+  v = lanDevice['PhysAddress'];
+  if (v && v.constructor === String) this.device[path+'PhysAddress'] = [false, v, 'xsd:string'];
   v = lanDevice['UserClassID'];
   if (v && v.constructor === String) this.device[path+'UserClassID'] = [false, v, 'xsd:string'];
   v = lanDevice['VendorClassID'];
   if (v && v.constructor === String) this.device[path+'VendorClassID'] = [false, v, 'xsd:string'];
+
+  delete this.device._sortedPaths;
 }

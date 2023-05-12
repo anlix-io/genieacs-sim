@@ -42,29 +42,43 @@ function interrupt(simulator, name) {
   state.running = undefined;
 }
 
+const randomMAC = () => "XX:XX:XX:XX:XX:XX".replace(/X/g, () => "0123456789ABCDEF"[Math.random()*16|0]);
+
+const randomN = (max, min=1) => Math.floor(Math.random()*(max+1-min))+min;
+
+const getRandomFromArray = (array) => array[Math.random()*array.length|0];
+
+
 const ping = {
+  path: {
+    tr069: 'InternetGatewayDevice.IPPingDiagnostics.',
+    tr181: 'Device.IP.Diagnostics.IPPing.',
+  },
+
   run: function(simulator, modified) { // executes Ping Diagnostic logic.
-    if (modified['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'] === undefined) {
+    const path = ping.path[simulator.TR];
+
+    if (modified[path+'DiagnosticsState'] === undefined) {
       // Modifying any of the writable parameters except for 'DiganosticState' MUST result 
       // in its value being set to "None".
       if (
-        modified['InternetGatewayDevice.IPPingDiagnostics.Interface'] !== undefined ||
-        modified['InternetGatewayDevice.IPPingDiagnostics.Host'] !== undefined ||
-        modified['InternetGatewayDevice.IPPingDiagnostics.Timeout'] !== undefined ||
-        modified['InternetGatewayDevice.IPPingDiagnostics.NumberOfRepetitions'] !== undefined ||
-        modified['InternetGatewayDevice.IPPingDiagnostics.DataBlockSize'] !== undefined ||
-        modified['InternetGatewayDevice.IPPingDiagnostics.DSCP'] !== undefined
+        modified[path+'Interface'] !== undefined ||
+        modified[path+'Host'] !== undefined ||
+        modified[path+'Timeout'] !== undefined ||
+        modified[path+'NumberOfRepetitions'] !== undefined ||
+        modified[path+'DataBlockSize'] !== undefined ||
+        modified[path+'DSCP'] !== undefined
       ) {
         // While the test is in progress, modifying any of the writable parameters except for
         // 'DiganosticState' MUST result in the test being terminated and its value being set to "None".
         interrupt(simulator, 'ping');
-        simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] = 'None';
+        simulator.device[path+'DiagnosticsState'][1] = 'None';
       }
       // if no ping parameter has been modified, this diagnostic is not executed.
       return;
     }
 
-    if (simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] !== 'Requested') return;
+    if (simulator.device[path+'DiagnosticsState'][1] !== 'Requested') return;
     // If the ACS sets the value of 'DiganosticState' to "Requested", the CPE MUST initiate the
     // corresponding diagnostic test. When writing, the only allowed value is Requested. To ensure the
     // use of the proper test parameters (the writable parameters in this object), the test parameters
@@ -84,122 +98,131 @@ const ping = {
     // establish a new connection to the ACS to allow theACS to view the results, indicating the 
     // Event code "8 DIAGNOSTICS COMPLETE" in the Inform message.
 
-    const host = simulator.device['InternetGatewayDevice.IPPingDiagnostics.Host'][1];
+    const host = simulator.device[path+'Host'][1];
     // checking host.
     if (host === '' || host.length > 256) {
       queue(simulator, 'ping', (simulator) => {
-        simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] = 'Error_CannotResolveHostName';
+        simulator.device[path+'DiagnosticsState'][1] = 'Error_CannotResolveHostName';
       }, 50);
       return;
     }
-    const dataBlockSize = parseInt(simulator.device['InternetGatewayDevice.IPPingDiagnostics.DataBlockSize'][1]);
-    const dscp = parseInt(simulator.device['InternetGatewayDevice.IPPingDiagnostics.DSCP'][1]);
+    const dataBlockSize = parseInt(simulator.device[path+'DataBlockSize'][1]);
+    const dscp = parseInt(simulator.device[path+'DSCP'][1]);
     // checking other parameter's.
     if (
       // The value of 'Interface' MUST be either a valid interface or an empty string. An attempt to set that
       // parameter to a different value MUST be rejected as an invalid parameter value. If an empty string is
       // specified, the CPE MUST use the interface as directed by its routing policy (Forwarding table entries)
       // to determine the appropriate interface.
-      simulator.device['InternetGatewayDevice.IPPingDiagnostics.Interface'][1].length > 256 ||
+      simulator.device[path+'Interface'][1].length > 256 ||
       !(dataBlockSize >= 1 && dataBlockSize < 65536) || !(dscp > -1 && dscp < 64) ||
-      !(parseInt(simulator.device['InternetGatewayDevice.IPPingDiagnostics.Timeout'][1]) > 0) ||
-      !(parseInt(simulator.device['InternetGatewayDevice.IPPingDiagnostics.NumberOfRepetitions'][1]) > 0)
+      !(parseInt(simulator.device[path+'Timeout'][1]) > 0) ||
+      !(parseInt(simulator.device[path+'NumberOfRepetitions'][1]) > 0)
     ) {
       queue(simulator, 'ping', (simulator) => {
-        simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] = 'Error_Other';
+        simulator.device[path+'DiagnosticsState'][1] = 'Error_Other';
       }, 50)
       return;
     }
 
     // all parameters are valid.
-    queue(simulator, 'ping', simulator.diagnosticsStates.ping.result, 2000);  // small timeout to finish fast.
+    queue(simulator, 'ping', simulator.diagnosticsStates.ping.result, 2000);
     // After the diagnostic is complete, the value of all result parameters (all read-only parameters in this
     // object) MUST be retained by the CPE until either this diagnostic is run again, or the CPE reboots.
   },
 
   results: { // possible results for a ping diagnostic.
     default: function(simulator) { // successful ping result.
-      simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] = 'Complete';
-      simulator.device['InternetGatewayDevice.IPPingDiagnostics.SuccessCount'][1] =
-        simulator.device['InternetGatewayDevice.IPPingDiagnostics.NumberOfRepetitions'][1];
-      simulator.device['InternetGatewayDevice.IPPingDiagnostics.FailureCount'][1] = '0';
-      simulator.device['InternetGatewayDevice.IPPingDiagnostics.AverageResponseTime'][1] = '11';
-      simulator.device['InternetGatewayDevice.IPPingDiagnostics.MinimumResponseTime'][1] = '9';
-      simulator.device['InternetGatewayDevice.IPPingDiagnostics.MaximumResponseTime'][1] = '14';
+      const path = ping.path[simulator.TR];
+      simulator.device[path+'DiagnosticsState'][1] = 'Complete';
+      simulator.device[path+'SuccessCount'][1] =
+        simulator.device[path+'NumberOfRepetitions'][1];
+      simulator.device[path+'FailureCount'][1] = '0';
+      simulator.device[path+'AverageResponseTime'][1] = '11';
+      simulator.device[path+'MinimumResponseTime'][1] = '9';
+      simulator.device[path+'MaximumResponseTime'][1] = '14';
     },
     error: function(simulator) { // internal error.
-      simulator.device['InternetGatewayDevice.IPPingDiagnostics.DiagnosticsState'][1] = 'Error_Internal';
+      const path = ping.path[simulator.TR];
+      simulator.device[path+'DiagnosticsState'][1] = 'Error_Internal';
     },
   },
 };
 exports.ping = ping;
 
 const traceroute = {
+  path: {
+    tr069: 'InternetGatewayDevice.TraceRouteDiagnostics.',
+    tr181: 'Device.IP.Diagnostics.TraceRoute.',
+  },
+
   run: function(simulator, modified) {
-    if (modified['InternetGatewayDevice.TraceRouteDiagnostics.DiagnosticsState'] === undefined) {
+    const path = traceroute.path[simulator.TR];
+
+    if (modified[path+'DiagnosticsState'] === undefined) {
       if (
-        modified['InternetGatewayDevice.TraceRouteDiagnostics.Interface'] !== undefined ||
-        modified['InternetGatewayDevice.TraceRouteDiagnostics.Host'] !== undefined ||
-        modified['InternetGatewayDevice.TraceRouteDiagnostics.NumberOfTries'] !== undefined ||
-        modified['InternetGatewayDevice.TraceRouteDiagnostics.Timeout'] !== undefined ||
-        modified['InternetGatewayDevice.TraceRouteDiagnostics.DataBlockSize'] !== undefined ||
-        modified['InternetGatewayDevice.TraceRouteDiagnostics.MaxHopCount'] !== undefined
+        modified[path+'Interface'] !== undefined ||
+        modified[path+'Host'] !== undefined ||
+        modified[path+'NumberOfTries'] !== undefined ||
+        modified[path+'Timeout'] !== undefined ||
+        modified[path+'DataBlockSize'] !== undefined ||
+        modified[path+'MaxHopCount'] !== undefined
       ) {
         interrupt(simulator, 'traceroute');
-        simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.DiagnosticsState'][1] = 'None';
+        simulator.device[path+'DiagnosticsState'][1] = 'None';
       }
       // if no traceroute parameter has been modified, this diagnostic is not executed.
       return;
     }
 
-    if (simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.DiagnosticsState'][1] !== 'Requested') return;
+    if (simulator.device[path+'DiagnosticsState'][1] !== 'Requested') return;
 
     interrupt(simulator, 'traceroute');
 
-    const host = simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.Host'][1];
+    const host = simulator.device[path+'Host'][1];
     // checking host.
     if (host === '' || host.length > 256) {
       queue(simulator, 'traceroute', (simulator) => {
-        simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.DiagnosticsState'][1] = 'Error_CannotResolveHostName';
+        simulator.device[path+'DiagnosticsState'][1] = 'Error_CannotResolveHostName';
       }, 50);
       return;
     }
-    const numberOfTries = parseInt(simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.NumberOfTries'][1]);
-    const dataBlockSize = parseInt(simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.DataBlockSize'][1]);
-    const dscp = parseInt(simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.DSCP'][1]);
-    const maxHopCount = parseInt(simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.MaxHopCount'][1]);
+    const numberOfTries = parseInt(simulator.device[path+'NumberOfTries'][1]);
+    const dataBlockSize = parseInt(simulator.device[path+'DataBlockSize'][1]);
+    const dscp = parseInt(simulator.device[path+'DSCP'][1]);
+    const maxHopCount = parseInt(simulator.device[path+'MaxHopCount'][1]);
     // checking other parameter's.
     if (
-      simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.Interface'][1].length > 256 ||
+      simulator.device[path+'Interface'][1].length > 256 ||
       numberOfTries < 1 || numberOfTries > 3 ||
-      parseInt(simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.Timeout'][1]) < 1 ||
+      parseInt(simulator.device[path+'Timeout'][1]) < 1 ||
       dataBlockSize < 1 || dataBlockSize > 65535 || dscp < 0 || dscp > 63 ||
       maxHopCount < 1 || maxHopCount > 64
     ) {
       queue(simulator, 'traceroute', (simulator) => {
-        simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.DiagnosticsState'][1] = 'Error_MaxHopCountExceeded';
+        simulator.device[path+'DiagnosticsState'][1] = 'Error_MaxHopCountExceeded';
       }, 50)
       return;
     }
 
     // all parameters are valid.
-    queue(simulator, 'traceroute', simulator.diagnosticsStates.traceroute.result, 2000); // small timeout to finish fast.
+    queue(simulator, 'traceroute', simulator.diagnosticsStates.traceroute.result, 2000);
   },
 
-  eraseOldResult: function(simulator) { // erasing old results.
-    simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.RouteHopsNumberOfEntries'][1] = '0';
+  eraseResult: function(simulator, path) { // erasing old results.
+    simulator.device[path+'RouteHopsNumberOfEntries'][1] = '0';
 
     let hop = 1; // starts from 1.
     while (true) {
-      const hopRoute = `InternetGatewayDevice.TraceRouteDiagnostics.RouteHops.${hop}.`;
-      if (simulator.device[hopRoute]) {
-        delete simulator.device[hopRoute];
-        delete simulator.device[hopRoute+'HopHost'];
-        delete simulator.device[hopRoute+'HopHostAddress'];
-        delete simulator.device[hopRoute+'HopErrorCode'];
-        delete simulator.device[hopRoute+'HopRTTimes'];
+      const routeHop = path+`RouteHops.${hop}.`;
+      if (simulator.device[routeHop]) {
+        delete simulator.device[routeHop+'HopHost'];
+        delete simulator.device[routeHop+'HopHostAddress'];
+        delete simulator.device[routeHop+'HopErrorCode'];
+        delete simulator.device[routeHop+'HopRTTimes'];
+        delete simulator.device[routeHop];
       } else {
-        delete simulator.device['InternetGatewayDevice.TraceRouteDiagnostics.RouteHops.'];
+        delete simulator.device[path+'RouteHops.'];
         break;
       }
       hop++;
@@ -207,10 +230,8 @@ const traceroute = {
 
     delete simulator.device._sortedPaths;
   },
-  produceHopResults: function (simulator, forcedMaxHops=false, amoutOfHops=8) {
-    traceroute.eraseOldResult(simulator);
-
-    let path = 'InternetGatewayDevice.TraceRouteDiagnostics.';
+  produceHopResults: function (simulator, path, forcedMaxHops=false, amoutOfHops=8) {
+    traceroute.eraseResult(simulator, path);
 
     const maxHops = parseInt(simulator.device[path+'MaxHopCount'][1]);
     const hops = forcedMaxHops ? maxHops : amoutOfHops; // doing max hops or the given amount of hops.
@@ -257,11 +278,124 @@ const traceroute = {
 
   results: {
     default: function(simulator) {
-      traceroute.produceHopResults(simulator, false, 8);
+      const path = traceroute.path[simulator.TR];
+      traceroute.produceHopResults(simulator, path, false, 8);
     },
     error: function(simulator) { // max hop count exceeded error.
-      traceroute.produceHopResults(simulator, true)
+      const path = traceroute.path[simulator.TR];
+      traceroute.produceHopResults(simulator, path, true)
     },
-  }
+  },
 };
 exports.traceroute = traceroute;
+
+const sitesurvey = {
+  path: {
+    tr181: 'Device.WiFi.NeighboringWiFiDiagnostic.',
+  },
+
+  run: function(simulator, modified) {
+    const path = sitesurvey.path[simulator.TR];
+    if (modified[path+'DiagnosticsState'] === undefined) return;
+
+    const field = simulator.device[path+'DiagnosticsState'];
+    // this device may not implement neighboring networks diagnostic.
+    if (!field) return;
+
+    if (field[1] !== 'Requested') return;
+
+    interrupt(simulator, 'sitesurvey');
+    queue(simulator, 'sitesurvey', simulator.diagnosticsStates.sitesurvey.result, 2000);
+  },
+
+  eraseResult: function (simulator, path) {
+    simulator.device[path+'ResultNumberOfEntries'][1] = '0';
+
+    let fields = [
+      'BSSID',
+      'BasicDataTransferRates',
+      'BeaconPeriod',
+      'Channel',
+      'DTIMPeriod',
+      'EncryptionMode',
+      'Mode',
+      'Noise',
+      'OperatingChannelBandwidth',
+      'OperatingFrequencyBand',
+      'OperatingStandards',
+      'Radio',
+      'SSID',
+      'SecurityModeEnabled',
+      'SignalStrength',
+      'SupportedDataTransferRates',
+      'SupportedStandards',
+    ];
+
+    let i = 0;
+    while (true) {
+      const neighbourPath = path+`Result.${i}.`;
+      if (simulator.device[neighbourPath]) {
+        for (let field of fields) {
+          delete simulator.device[neighbourPath+field];
+        }
+        delete simulator.device[neighbourPath];
+      } else {
+        delete simulator.device[path+`Result.`];
+        break;
+      }
+      i++;
+    }
+
+    delete simulator.device._sortedPaths;
+  },
+
+  results: {
+    default: function (simulator) {
+      let path = sitesurvey.path[simulator.TR];
+
+      sitesurvey.eraseResult(simulator, path);
+
+      const n = 20; // 20 neighboring WiFi networks.
+      
+      simulator.device[path+'DiagnosticsState'][1] = 'Complete';
+      simulator.device[path+'ResultNumberOfEntries'] = [false, n.toString(), 'xsd:unsignedInt'];
+
+      path += 'Result.';
+      simulator.device[path] = [false];
+
+      for (let i = 0; i < n; i++) {
+        const wifi5 = Math.random() > 0.5; // randomly assigning this network's WiFi frequency.
+        const bandwidthIndex = randomN(wifi5 ? 3 : 2); // WiFi 5Ghz has 20, 40 and 80Mhz bandwidth. 2.4Ghz has 20 and 40Mhz.
+        const channel = wifi5 // WiFi 5GHz channel number depends on it's bandwidth. 2.4Ghz does not.
+          ? getRandomFromArray([[36,40,44,48,149,153,157,161,165],[38,46,151,159],[42,155]][bandwidthIndex-1])
+          : randomN(13);
+
+        const neighbourPath = path+`${i}.`;
+        simulator.device[neighbourPath] = [false];
+        simulator.device[neighbourPath+'BSSID'] = [false, randomMAC(), 'xsd:string'];
+        simulator.device[neighbourPath+'BasicDataTransferRates'] = [false, '', 'xsd:string'];
+        simulator.device[neighbourPath+'BeaconPeriod'] = [false, '0', 'xsd:unsignedInt'];
+        simulator.device[neighbourPath+'Channel'] = [false, channel.toString(), 'xsd:unsignedInt'];
+        simulator.device[neighbourPath+'DTIMPeriod'] = [false, '0', 'xsd:unsignedInt'];
+        simulator.device[neighbourPath+'EncryptionMode'] = [false, Math.random() > 0.5 ? 'TKIP' : 'AES', 'xsd:string'];
+        simulator.device[neighbourPath+'Mode'] = [false, '0', 'xsd:string'];
+        simulator.device[neighbourPath+'Noise'] = [false, '0', 'xsd:unsignedInt'];
+        simulator.device[neighbourPath+'OperatingChannelBandwidth'] = [false, `${(2**bandwidthIndex)*10}MHz`, 'xsd:string'];
+        simulator.device[neighbourPath+'OperatingFrequencyBand'] = [false, '', 'xsd:string'];
+        simulator.device[neighbourPath+'OperatingStandards'] = [false, '', 'xsd:string'];
+        simulator.device[neighbourPath+'Radio'] = [false, `Device.WiFi.Radio.${wifi5 ? 2 : 1}`, 'xsd:string'];
+        simulator.device[neighbourPath+'SSID'] = [false, 'my beautiful SSID '+i, 'xsd:string'];
+        simulator.device[neighbourPath+'SecurityModeEnabled'] = [false, 'Encrypted', 'xsd:string'];
+        simulator.device[neighbourPath+'SignalStrength'] = [false, (-randomN(95,30)).toString(), 'xsd:int'];
+        simulator.device[neighbourPath+'SupportedDataTransferRates'] = [false, '', 'xsd:string'];
+        simulator.device[neighbourPath+'SupportedStandards'] = [false, '', 'xsd:string'];
+      }
+    },
+    error: function (simulator) {
+      const path = sitesurvey.path[simulator.TR];
+      sitesurvey.eraseResult(simulator, path);
+      simulator.device[path+'DiagnosticsState'][1] = 'Error';
+    },
+  },
+};
+exports.sitesurvey = sitesurvey;
