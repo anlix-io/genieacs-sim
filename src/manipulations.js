@@ -1,3 +1,7 @@
+const possibleRssiFieldNames = ['SignalStrength', 'AssociatedDeviceRssi', 'X_HW_RSSI', 'RSSI',
+  'X_TP_StaSignalStrength', 'X_ZTE-COM_RSSI', 'X_ZTE-COM_WLAN_RSSI', 'X_DLINK_RSSI', 'X_CT-COM_RSSI',
+  'WLAN_RSSI', 'X_ITBS_WLAN_ClientSignalStrength', 'X_ITBS_WLAN_ClientSignalStrength'];
+
 exports.addLanDevice = function (lanDevice) {
   if (!lanDevice) return; // returns when no 'lanDevice' given in argument.
   if (!(lanDevice.HostName && lanDevice.IPAddress && lanDevice.MACAddress)) return; // required fields.
@@ -37,6 +41,12 @@ exports.addLanDevice = function (lanDevice) {
   v = lanDevice['InterfaceType'];
   if (v && v.constructor === String) this.device.set(hostsPath+'InterfaceType', [false, v, 'xsd:string']);
   v = lanDevice['Layer2Interface'];
+  let radio = lanDevice['radio'];
+  if (v === undefined && radio !== undefined) {
+    v = this.TR === 'tr069' 
+      ? `InternetGatewayDevice.LANDevice.1.WLANConfiguration.${radio}`
+      : `Device.WiFi.MultiAP.APDevice.1.Radio.${radio}.AP.2`;
+  }
   if (v && v.constructor === String) this.device.set(hostsPath+'Layer2Interface', [false, v, 'xsd:string']);
   v = lanDevice['LeaseTimeRemaining'];
   if (v && v.constructor === Number) this.device.set(hostsPath+'LeaseTimeRemaining', [false, v.toFixed(0), 'xsd:int']);
@@ -49,5 +59,27 @@ exports.addLanDevice = function (lanDevice) {
   v = lanDevice['VendorClassID'];
   if (v && v.constructor === String) this.device.set(hostsPath+'VendorClassID', [false, v, 'xsd:string']);
 
+  // associatedDevicesPath = this.TR === 'tr069'
+  //   ? `InternetGatewayDevice.LANDevice.1.WLANConfiguration.${1}.AssociatedDevice.`
+  //   : `Device.WiFi.MultiAP.APDevice.1.Radio.${}.AP.2.AssociatedDevice.`;
+
+  let associatedDevicesPath = lanDevice['Layer2Interface']+`.AssociatedDevice.${index}`;
+  createNodesForPath(this, associatedDevicesPath)
+  associatedDevicesPath += '.'+
+
+  v = lanDevice['rssi'];
+  for (let name of possibleRssiFieldNames) {
+    this.device.set(associatedDevicesPath+name, [false, v.toString(), 'xsd:int']);
+  }
+
   delete this.device._sortedPaths;
+}
+
+function createNodesForPath(simulator, fullPath) {
+  let steps = fullPath.split('.');
+  for (let path = steps[0]; steps.length > 0; path += '.'+steps[0]) {
+    steps.shift();
+    if (simulator.device.has(path)) continue;
+    simulator.device.set(path, [false]);
+  }
 }
