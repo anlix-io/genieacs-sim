@@ -10,7 +10,7 @@ const fakeGenie = {};
 fakeGenie.createSimulator = function(
   acsUrl, dataModel, serialNumber, macAddr, verbose=false, periodicInformsDisabled=false
 ) {
-  let device = {};
+  let device = new Map();
   const data = fs.readFileSync(`${__dirname}/../models/${dataModel}.csv`);
   const rows = csvParser.reduce(csvParser.parseCsv(data.toString()));
   for (const row of rows) {
@@ -18,11 +18,13 @@ fakeGenie.createSimulator = function(
     let id = row["Parameter"];
     if (isObject) id += ".";
 
-    device[id] = [row["Writable"] === "true"];
+    const v = [row["Writable"] === "true"];
     if (!isObject) {
-      device[id].push(row["Value"] || "");
-      if (row["Value type"] != null) device[id].push(row["Value type"]);
+      v.push(row["Value"] || "");
+      const t = row["Value type"];
+      if (t != null) v.push(t);
     }
+    device.set(id, v);
   }
   return new Simulator(device, serialNumber, macAddr, acsUrl, verbose, periodicInformsDisabled);
 }

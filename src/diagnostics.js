@@ -1,6 +1,7 @@
 const methods = require("./methods");
 
 const event = '8 DIAGNOSTICS COMPLETE';
+const diagnosticDuration = 2000; // in milliseconds.
 
 async function finish(simulator, name, func, afterMilliseconds, resolve) {
   // reference to object containing this diagnostic's execution data.
@@ -72,13 +73,13 @@ const ping = {
         // While the test is in progress, modifying any of the writable parameters except for
         // 'DiganosticState' MUST result in the test being terminated and its value being set to "None".
         interrupt(simulator, 'ping');
-        simulator.device[path+'DiagnosticsState'][1] = 'None';
+        simulator.device.get(path+'DiagnosticsState')[1] = 'None';
       }
       // if no ping parameter has been modified, this diagnostic is not executed.
       return;
     }
 
-    if (simulator.device[path+'DiagnosticsState'][1] !== 'Requested') return;
+    if (simulator.device.get(path+'DiagnosticsState')[1] !== 'Requested') return;
     // If the ACS sets the value of 'DiganosticState' to "Requested", the CPE MUST initiate the
     // corresponding diagnostic test. When writing, the only allowed value is Requested. To ensure the
     // use of the proper test parameters (the writable parameters in this object), the test parameters
@@ -98,35 +99,35 @@ const ping = {
     // establish a new connection to the ACS to allow theACS to view the results, indicating the 
     // Event code "8 DIAGNOSTICS COMPLETE" in the Inform message.
 
-    const host = simulator.device[path+'Host'][1];
+    const host = simulator.device.get(path+'Host')[1];
     // checking host.
     if (host === '' || host.length > 256) {
       queue(simulator, 'ping', (simulator) => {
-        simulator.device[path+'DiagnosticsState'][1] = 'Error_CannotResolveHostName';
-      }, 50);
+        simulator.device.get(path+'DiagnosticsState')[1] = 'Error_CannotResolveHostName';
+      }, diagnosticDuration);
       return;
     }
-    const dataBlockSize = parseInt(simulator.device[path+'DataBlockSize'][1]);
-    const dscp = parseInt(simulator.device[path+'DSCP'][1]);
+    const dataBlockSize = parseInt(simulator.device.get(path+'DataBlockSize')[1]);
+    const dscp = parseInt(simulator.device.get(path+'DSCP')[1]);
     // checking other parameter's.
     if (
       // The value of 'Interface' MUST be either a valid interface or an empty string. An attempt to set that
       // parameter to a different value MUST be rejected as an invalid parameter value. If an empty string is
       // specified, the CPE MUST use the interface as directed by its routing policy (Forwarding table entries)
       // to determine the appropriate interface.
-      simulator.device[path+'Interface'][1].length > 256 ||
+      simulator.device.get(path+'Interface')[1].length > 256 ||
       !(dataBlockSize >= 1 && dataBlockSize < 65536) || !(dscp > -1 && dscp < 64) ||
-      !(parseInt(simulator.device[path+'Timeout'][1]) > 0) ||
-      !(parseInt(simulator.device[path+'NumberOfRepetitions'][1]) > 0)
+      !(parseInt(simulator.device.get(path+'Timeout')[1]) > 0) ||
+      !(parseInt(simulator.device.get(path+'NumberOfRepetitions')[1]) > 0)
     ) {
       queue(simulator, 'ping', (simulator) => {
-        simulator.device[path+'DiagnosticsState'][1] = 'Error_Other';
-      }, 50)
+        simulator.device.get(path+'DiagnosticsState')[1] = 'Error_Other';
+      }, diagnosticDuration)
       return;
     }
 
     // all parameters are valid.
-    queue(simulator, 'ping', simulator.diagnosticsStates.ping.result, 2000);
+    queue(simulator, 'ping', simulator.diagnosticsStates.ping.result, diagnosticDuration);
     // After the diagnostic is complete, the value of all result parameters (all read-only parameters in this
     // object) MUST be retained by the CPE until either this diagnostic is run again, or the CPE reboots.
   },
@@ -134,17 +135,17 @@ const ping = {
   results: { // possible results for a ping diagnostic.
     default: function(simulator) { // successful ping result.
       const path = ping.path[simulator.TR];
-      simulator.device[path+'DiagnosticsState'][1] = 'Complete';
-      simulator.device[path+'SuccessCount'][1] =
-        simulator.device[path+'NumberOfRepetitions'][1];
-      simulator.device[path+'FailureCount'][1] = '0';
-      simulator.device[path+'AverageResponseTime'][1] = '11';
-      simulator.device[path+'MinimumResponseTime'][1] = '9';
-      simulator.device[path+'MaximumResponseTime'][1] = '14';
+      simulator.device.get(path+'DiagnosticsState')[1] = 'Complete';
+      simulator.device.get(path+'SuccessCount')[1] =
+        simulator.device.get(path+'NumberOfRepetitions')[1];
+      simulator.device.get(path+'FailureCount')[1] = '0';
+      simulator.device.get(path+'AverageResponseTime')[1] = '11';
+      simulator.device.get(path+'MinimumResponseTime')[1] = '9';
+      simulator.device.get(path+'MaximumResponseTime')[1] = '14';
     },
     error: function(simulator) { // internal error.
       const path = ping.path[simulator.TR];
-      simulator.device[path+'DiagnosticsState'][1] = 'Error_Internal';
+      simulator.device.get(path+'DiagnosticsState')[1] = 'Error_Internal';
     },
   },
 };
@@ -169,60 +170,60 @@ const traceroute = {
         modified[path+'MaxHopCount'] !== undefined
       ) {
         interrupt(simulator, 'traceroute');
-        simulator.device[path+'DiagnosticsState'][1] = 'None';
+        simulator.device.get(path+'DiagnosticsState')[1] = 'None';
       }
       // if no traceroute parameter has been modified, this diagnostic is not executed.
       return;
     }
 
-    if (simulator.device[path+'DiagnosticsState'][1] !== 'Requested') return;
+    if (simulator.device.get(path+'DiagnosticsState')[1] !== 'Requested') return;
 
     interrupt(simulator, 'traceroute');
 
-    const host = simulator.device[path+'Host'][1];
+    const host = simulator.device.get(path+'Host')[1];
     // checking host.
     if (host === '' || host.length > 256) {
       queue(simulator, 'traceroute', (simulator) => {
-        simulator.device[path+'DiagnosticsState'][1] = 'Error_CannotResolveHostName';
-      }, 50);
+        simulator.device.get(path+'DiagnosticsState')[1] = 'Error_CannotResolveHostName';
+      }, diagnosticDuration);
       return;
     }
-    const numberOfTries = parseInt(simulator.device[path+'NumberOfTries'][1]);
-    const dataBlockSize = parseInt(simulator.device[path+'DataBlockSize'][1]);
-    const dscp = parseInt(simulator.device[path+'DSCP'][1]);
-    const maxHopCount = parseInt(simulator.device[path+'MaxHopCount'][1]);
+    const numberOfTries = parseInt(simulator.device.get(path+'NumberOfTries')[1]);
+    const dataBlockSize = parseInt(simulator.device.get(path+'DataBlockSize')[1]);
+    const dscp = parseInt(simulator.device.get(path+'DSCP')[1]);
+    const maxHopCount = parseInt(simulator.device.get(path+'MaxHopCount')[1]);
     // checking other parameter's.
     if (
-      simulator.device[path+'Interface'][1].length > 256 ||
+      simulator.device.get(path+'Interface')[1].length > 256 ||
       numberOfTries < 1 || numberOfTries > 3 ||
-      parseInt(simulator.device[path+'Timeout'][1]) < 1 ||
+      parseInt(simulator.device.get(path+'Timeout')[1]) < 1 ||
       dataBlockSize < 1 || dataBlockSize > 65535 || dscp < 0 || dscp > 63 ||
       maxHopCount < 1 || maxHopCount > 64
     ) {
       queue(simulator, 'traceroute', (simulator) => {
-        simulator.device[path+'DiagnosticsState'][1] = 'Error_MaxHopCountExceeded';
-      }, 50)
+        simulator.device.get(path+'DiagnosticsState')[1] = 'Error_MaxHopCountExceeded';
+      }, diagnosticDuration)
       return;
     }
 
     // all parameters are valid.
-    queue(simulator, 'traceroute', simulator.diagnosticsStates.traceroute.result, 2000);
+    queue(simulator, 'traceroute', simulator.diagnosticsStates.traceroute.result, diagnosticDuration);
   },
 
   eraseResult: function(simulator, path) { // erasing old results.
-    simulator.device[path+'RouteHopsNumberOfEntries'][1] = '0';
+    simulator.device.get(path+'RouteHopsNumberOfEntries')[1] = '0';
 
     let hop = 1; // starts from 1.
     while (true) {
       const routeHop = path+`RouteHops.${hop}.`;
-      if (simulator.device[routeHop]) {
-        delete simulator.device[routeHop+'HopHost'];
-        delete simulator.device[routeHop+'HopHostAddress'];
-        delete simulator.device[routeHop+'HopErrorCode'];
-        delete simulator.device[routeHop+'HopRTTimes'];
-        delete simulator.device[routeHop];
+      if (simulator.device.has(routeHop)) {
+        simulator.device.delete(routeHop+'HopHost');
+        simulator.device.delete(routeHop+'HopHostAddress');
+        simulator.device.delete(routeHop+'HopErrorCode');
+        simulator.device.delete(routeHop+'HopRTTimes');
+        simulator.device.delete(routeHop);
       } else {
-        delete simulator.device[path+'RouteHops.'];
+        simulator.device.delete(path+'RouteHops.');
         break;
       }
       hop++;
@@ -233,23 +234,23 @@ const traceroute = {
   produceHopResults: function (simulator, path, forcedMaxHops=false, amoutOfHops=8) {
     traceroute.eraseResult(simulator, path);
 
-    const maxHops = parseInt(simulator.device[path+'MaxHopCount'][1]);
+    const maxHops = parseInt(simulator.device.get(path+'MaxHopCount')[1]);
     const hops = forcedMaxHops ? maxHops : amoutOfHops; // doing max hops or the given amount of hops.
 
-    simulator.device[path+'DiagnosticsState'][1] = forcedMaxHops ? 'Error_MaxHopCountExceeded' : 'Complete';
-    simulator.device[path+'ResponseTime'][1] = forcedMaxHops ? `${((5+2*hops)*1.025).toFixed(3)}` : '3000';
-    simulator.device[path+'RouteHopsNumberOfEntries'][1] = `${hops}`;
+    simulator.device.get(path+'DiagnosticsState')[1] = forcedMaxHops ? 'Error_MaxHopCountExceeded' : 'Complete';
+    simulator.device.get(path+'ResponseTime')[1] = forcedMaxHops ? `${((5+2*hops)*1.025).toFixed(3)}` : '3000';
+    simulator.device.get(path+'RouteHopsNumberOfEntries')[1] = hops.toString();
 
-    const host = simulator.device[path+`Host`][1];
-    const tries = parseInt(simulator.device[path+'NumberOfTries'][1]);
+    const host = simulator.device.get(path+`Host`)[1];
+    const tries = parseInt(simulator.device.get(path+'NumberOfTries')[1]);
 
     path += 'RouteHops.';
-    simulator.device[path] = [false]; // adding "RouteHops" node to the data model.
+    simulator.device.set(path, [false]); // adding "RouteHops" node to the data model.
 
     // hop indexes start from 1. 'rtt' is a simulation of the round trip time increase with each following hop.
     for (let hop = 1, rtt = 5; hop <= hops; hop++, rtt += 5) {
       const hopPath = path+`${hop}.` // path for the i-th hop.
-      simulator.device[hopPath] = [false]; // creating node for the i-th hop.
+      simulator.device.set(hopPath, [false]); // creating node for the i-th hop.
       
       let hopHost = `hop-${hop}.com`;
       let hopHostAddress = `123.123.${123+hop}.123`;
@@ -263,16 +264,16 @@ const traceroute = {
       }
       // Result parameter indicating the Host Name if DNS is able to resolve or IP Address of a hop along
       // the discovered route.
-      simulator.device[hopPath+'HopHost'] = [false, hopHost, 'xsd:string'];
+      simulator.device.set(hopPath+'HopHost', [false, hopHost, 'xsd:string']);
       // If this parameter is non empty it will contain the last IP address of the host returned for this hop and the
       // HopHost will contain the Host Name returned from the reverse DNS query.
-      simulator.device[hopPath+'HopHostAddress'] = [false, hopHostAddress, 'xsd:string'];
+      simulator.device.set(hopPath+'HopHostAddress', [false, hopHostAddress, 'xsd:string']);
       // Contains the error code returned for this hop. This code is directly from the ICMP CODE field.
-      simulator.device[hopPath+'HopErrorCode'] = [false, 0, 'xsd:unsignedInt'];
+      simulator.device.set(hopPath+'HopErrorCode', [false, 0, 'xsd:unsignedInt']);
       // Contains the comma separated list of one or more round trip times in milliseconds (one for each
       // repetition) for this hop.
       let hopRtTimes = [(rtt*1.01).toFixed(3), (rtt*0.975).toFixed(3), (rtt*1.025).toFixed(3)].slice(0, tries).toString();
-      simulator.device[hopPath+'HopRTTimes'] = [false, hopRtTimes, 'xsd:string'];
+      simulator.device.set(hopPath+'HopRTTimes', [false, hopRtTimes, 'xsd:string']);
     }
   },
 
@@ -298,18 +299,18 @@ const sitesurvey = {
     const path = sitesurvey.path[simulator.TR];
     if (modified[path+'DiagnosticsState'] === undefined) return;
 
-    const field = simulator.device[path+'DiagnosticsState'];
+    const field = simulator.device.get(path+'DiagnosticsState');
     // this device may not implement neighboring networks diagnostic.
     if (!field) return;
 
     if (field[1] !== 'Requested') return;
 
     interrupt(simulator, 'sitesurvey');
-    queue(simulator, 'sitesurvey', simulator.diagnosticsStates.sitesurvey.result, 2000);
+    queue(simulator, 'sitesurvey', simulator.diagnosticsStates.sitesurvey.result, diagnosticDuration);
   },
 
   eraseResult: function (simulator, path) {
-    simulator.device[path+'ResultNumberOfEntries'][1] = '0';
+    simulator.device.get(path+'ResultNumberOfEntries')[1] = '0';
 
     let fields = [
       'BSSID',
@@ -331,16 +332,17 @@ const sitesurvey = {
       'SupportedStandards',
     ];
 
+    path += 'Result.';
     let i = 0;
     while (true) {
-      const neighbourPath = path+`Result.${i}.`;
-      if (simulator.device[neighbourPath]) {
+      const neighbourPath = path+`${i}.`;
+      if (simulator.device.has(neighbourPath)) {
         for (let field of fields) {
-          delete simulator.device[neighbourPath+field];
+          simulator.device.delete(neighbourPath+field);
         }
-        delete simulator.device[neighbourPath];
+        simulator.device.delete(neighbourPath);
       } else {
-        delete simulator.device[path+`Result.`];
+        simulator.device.delete(path);
         break;
       }
       i++;
@@ -357,11 +359,11 @@ const sitesurvey = {
 
       const n = 20; // 20 neighboring WiFi networks.
       
-      simulator.device[path+'DiagnosticsState'][1] = 'Complete';
-      simulator.device[path+'ResultNumberOfEntries'] = [false, n.toString(), 'xsd:unsignedInt'];
+      simulator.device.get(path+'DiagnosticsState')[1] = 'Complete';
+      simulator.device.get(path+'ResultNumberOfEntries')[1] = n.toString();
 
       path += 'Result.';
-      simulator.device[path] = [false];
+      simulator.device.set(path, [false]);
 
       for (let i = 0; i < n; i++) {
         const wifi5 = Math.random() > 0.5; // randomly assigning this network's WiFi frequency.
@@ -371,30 +373,30 @@ const sitesurvey = {
           : randomN(13);
 
         const neighbourPath = path+`${i}.`;
-        simulator.device[neighbourPath] = [false];
-        simulator.device[neighbourPath+'BSSID'] = [false, randomMAC(), 'xsd:string'];
-        simulator.device[neighbourPath+'BasicDataTransferRates'] = [false, '', 'xsd:string'];
-        simulator.device[neighbourPath+'BeaconPeriod'] = [false, '0', 'xsd:unsignedInt'];
-        simulator.device[neighbourPath+'Channel'] = [false, channel.toString(), 'xsd:unsignedInt'];
-        simulator.device[neighbourPath+'DTIMPeriod'] = [false, '0', 'xsd:unsignedInt'];
-        simulator.device[neighbourPath+'EncryptionMode'] = [false, Math.random() > 0.5 ? 'TKIP' : 'AES', 'xsd:string'];
-        simulator.device[neighbourPath+'Mode'] = [false, '0', 'xsd:string'];
-        simulator.device[neighbourPath+'Noise'] = [false, '0', 'xsd:unsignedInt'];
-        simulator.device[neighbourPath+'OperatingChannelBandwidth'] = [false, `${(2**bandwidthIndex)*10}MHz`, 'xsd:string'];
-        simulator.device[neighbourPath+'OperatingFrequencyBand'] = [false, '', 'xsd:string'];
-        simulator.device[neighbourPath+'OperatingStandards'] = [false, '', 'xsd:string'];
-        simulator.device[neighbourPath+'Radio'] = [false, `Device.WiFi.Radio.${wifi5 ? 2 : 1}`, 'xsd:string'];
-        simulator.device[neighbourPath+'SSID'] = [false, 'my beautiful SSID '+i, 'xsd:string'];
-        simulator.device[neighbourPath+'SecurityModeEnabled'] = [false, 'Encrypted', 'xsd:string'];
-        simulator.device[neighbourPath+'SignalStrength'] = [false, (-randomN(95,30)).toString(), 'xsd:int'];
-        simulator.device[neighbourPath+'SupportedDataTransferRates'] = [false, '', 'xsd:string'];
-        simulator.device[neighbourPath+'SupportedStandards'] = [false, '', 'xsd:string'];
+        simulator.device.set(neighbourPath, [false]);
+        simulator.device.set(neighbourPath+'BSSID', [false, randomMAC(), 'xsd:string']);
+        simulator.device.set(neighbourPath+'BasicDataTransferRates', [false, '', 'xsd:string']);
+        simulator.device.set(neighbourPath+'BeaconPeriod', [false, '0', 'xsd:unsignedInt']);
+        simulator.device.set(neighbourPath+'Channel', [false, channel.toString(), 'xsd:unsignedInt']);
+        simulator.device.set(neighbourPath+'DTIMPeriod', [false, '0', 'xsd:unsignedInt']);
+        simulator.device.set(neighbourPath+'EncryptionMode', [false, Math.random() > 0.5 ? 'TKIP' : 'AES', 'xsd:string']);
+        simulator.device.set(neighbourPath+'Mode', [false, '0', 'xsd:string']);
+        simulator.device.set(neighbourPath+'Noise', [false, '0', 'xsd:unsignedInt']);
+        simulator.device.set(neighbourPath+'OperatingChannelBandwidth', [false, `${(2**bandwidthIndex)*10}MHz`, 'xsd:string']);
+        simulator.device.set(neighbourPath+'OperatingFrequencyBand', [false, '', 'xsd:string']);
+        simulator.device.set(neighbourPath+'OperatingStandards', [false, '', 'xsd:string']);
+        simulator.device.set(neighbourPath+'Radio', [false, `Device.WiFi.Radio.${wifi5 ? 2 : 1}`, 'xsd:string']);
+        simulator.device.set(neighbourPath+'SSID', [false, 'my beautiful SSID '+i, 'xsd:string']);
+        simulator.device.set(neighbourPath+'SecurityModeEnabled', [false, 'Encrypted', 'xsd:string']);
+        simulator.device.set(neighbourPath+'SignalStrength', [false, (-randomN(95,30)).toString(), 'xsd:int']);
+        simulator.device.set(neighbourPath+'SupportedDataTransferRates', [false, '', 'xsd:string']);
+        simulator.device.set(neighbourPath+'SupportedStandards', [false, '', 'xsd:string']);
       }
     },
     error: function (simulator) {
       const path = sitesurvey.path[simulator.TR];
       sitesurvey.eraseResult(simulator, path);
-      simulator.device[path+'DiagnosticsState'][1] = 'Error';
+      simulator.device.get(path+'DiagnosticsState')[1] = 'Error';
     },
   },
 };

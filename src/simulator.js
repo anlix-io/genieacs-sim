@@ -101,8 +101,8 @@ class Simulator extends EventEmitter {
     this.periodicInformsDisabled = periodicInformsDisabled; // controls sending periodic informs or not.
 
     // defining which cwmp model version this device is using.
-    if (device['InternetGatewayDevice.ManagementServer.URL']) this.TR = 'tr069';
-    else if (device['Device.ManagementServer.URL']) this.TR = 'tr181';
+    if (this.device.get('InternetGatewayDevice.ManagementServer.URL')) this.TR = 'tr069';
+    else if (this.device.get('Device.ManagementServer.URL')) this.TR = 'tr181';
 
     for (let key in diagnostics) {
       this.diagnosticsStates[key] = {}; // initializing diagnostic state attributes.
@@ -150,26 +150,23 @@ class Simulator extends EventEmitter {
       return;
     }
 
-    if (this.device["DeviceID.SerialNumber"])
-      this.device["DeviceID.SerialNumber"][1] = this.serialNumber;
-    if (this.device["Device.DeviceInfo.SerialNumber"])
-      this.device["Device.DeviceInfo.SerialNumber"][1] = this.serialNumber;
-    if (this.device["InternetGatewayDevice.DeviceInfo.SerialNumber"])
-      this.device["InternetGatewayDevice.DeviceInfo.SerialNumber"][1] = this.serialNumber;
+    let v; // auxiliary variable to store a simulator.device value of a key.
 
-    if (this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"])
-      this.device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"][1] = this.mac;
-    if (this.device["Device.Ethernet.Interface.1.MACAddress"])
-      this.device["Device.Ethernet.Interface.1.MACAddress"][1] = this.mac;
+    if (v = this.device.get("DeviceID.SerialNumber")) v[1] = this.serialNumber;
+    if (v = this.device.get("Device.DeviceInfo.SerialNumber")) v[1] = this.serialNumber;
+    if (v = this.device.get("InternetGatewayDevice.DeviceInfo.SerialNumber")) v[1] = this.serialNumber;
+
+    if (v = this.device.get("InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress")) v[1] = this.mac;
+    if (v = this.device.get("Device.Ethernet.Interface.1.MACAddress")) v[1] = this.mac;
 
     let username = "";
     let password = "";
-    if (this.device["Device.ManagementServer.Username"]) {
-      username = this.device["Device.ManagementServer.Username"][1];
-      password = this.device["Device.ManagementServer.Password"][1];
-    } else if (this.device["InternetGatewayDevice.ManagementServer.Username"]) {
-      username = this.device["InternetGatewayDevice.ManagementServer.Username"][1];
-      password = this.device["InternetGatewayDevice.ManagementServer.Password"][1];
+    if (v = this.device.get("Device.ManagementServer.Username")) {
+      username = v[1];
+      password = this.device.get("Device.ManagementServer.Password")[1];
+    } else if (v = this.device.get("InternetGatewayDevice.ManagementServer.Username")) {
+      username = v[1];
+      password = this.device.get("InternetGatewayDevice.ManagementServer.Password")[1];
     }
 
     this.basicAuth = "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
@@ -179,11 +176,9 @@ class Simulator extends EventEmitter {
     this.httpAgent = new this.http.Agent({keepAlive: true, maxSockets: 1});
 
     let connectionRequestUrl = await this.listenForConnectionRequests();
-    if (this.device["InternetGatewayDevice.ManagementServer.ConnectionRequestURL"]) {
-      this.device["InternetGatewayDevice.ManagementServer.ConnectionRequestURL"][1] = connectionRequestUrl;
-    } else if (this.device["Device.ManagementServer.ConnectionRequestURL"]) {
-      this.device["Device.ManagementServer.ConnectionRequestURL"][1] = connectionRequestUrl;
-    }
+    if (v = this.device.get("InternetGatewayDevice.ManagementServer.ConnectionRequestURL")) v[1] = connectionRequestUrl;
+    else if (v = this.device.get("Device.ManagementServer.ConnectionRequestURL")) v[1] = connectionRequestUrl;
+
     // device is ready to receive requests.
     this.emit('started');
 
@@ -407,10 +402,11 @@ class Simulator extends EventEmitter {
     if (this.periodicInformsDisabled) return;
 
     let informInterval = 10;
-    if (this.device["Device.ManagementServer.PeriodicInformInterval"])
-      informInterval = parseInt(this.device["Device.ManagementServer.PeriodicInformInterval"][1]);
-    else if (this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"])
-      informInterval = parseInt(this.device["InternetGatewayDevice.ManagementServer.PeriodicInformInterval"][1]);
+    let v;
+    if (v = this.device.get("Device.ManagementServer.PeriodicInformInterval"))
+      informInterval = parseInt(v[1]);
+    else if (v = this.device.get("InternetGatewayDevice.ManagementServer.PeriodicInformInterval"))
+      informInterval = parseInt(v[1]);
 
     this.nextInformTimeout = setTimeout(this.startSession.bind(this), 1000*informInterval);
   }
