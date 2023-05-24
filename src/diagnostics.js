@@ -401,3 +401,182 @@ const sitesurvey = {
   },
 };
 exports.sitesurvey = sitesurvey;
+
+const speedtest = {
+  path: {
+    tr069: 'InternetGatewayDevice.DownloadDiagnostics.',
+    tr181: 'Device.IP.Diagnostics.DownloadDiagnostics.',
+  },
+
+  run: function(simulator, modified) { // executes Speed test Diagnostic logic.
+    const path = speedtest.path[simulator.TR];
+
+    if (modified[path+'DiagnosticsState'] === undefined) {
+      if (
+        modified[path+'Interface'] !== undefined ||
+        modified[path+'DownloadURL'] !== undefined ||
+        modified[path+'DSCP'] !== undefined ||
+        modified[path+'EthernetPriority'] !== undefined ||
+        modified[path+'TimeBasedTestDuration'] !== undefined ||
+        modified[path+'TimeBasedTestMeasurementInterval'] !== undefined ||
+        modified[path+'TimeBasedTestMeasurementOffset'] !== undefined ||
+        modified[path+'NumberOfConnections'] !== undefined ||
+        modified[path+'EnablePerConnectionResults'] !== undefined
+      ) {
+        interrupt(simulator, 'speedtest');
+        simulator.device.get(path+'DiagnosticsState')[1] = 'None';
+      }
+      // if no speedtest parameter has been modified, this diagnostic is not executed.
+      return;
+    }
+
+    if (simulator.device.get(path+'DiagnosticsState')[1] !== 'Requested') return;
+
+    interrupt(simulator, 'speedtest');
+
+    // checking 'downloadURL'.
+    const downloadURL = simulator.device.get(path+'DownloadURL')[1];
+    if (downloadURL === '' || downloadURL.length > 2048) {
+      queue(simulator, 'speedtest', (simulator) => {
+        simulator.device.get(path+'DiagnosticsState')[1] = 'Error_CannotResolveHostName';
+      }, diagnosticDuration);
+      return;
+    }
+    // checking other parameter's.
+    const dscp = parseInt(simulator.device.get(path+'DSCP')[1]);
+    const ethernetPriority = parseInt(simulator.device.get(path+'EthernetPriority')[1]);
+    const tbtDuration = parseInt((simulator.device.get(path+'TimeBasedTestDuration') || [,0])[1]);
+    const tbtInterval = parseInt((simulator.device.get(path+'TimeBasedTestMeasurementInterval') || [,0])[1]);
+    const tbtOffset = parseInt((simulator.device.get(path+'TimeBasedTestMeasurementOffset') || [,0])[1]);
+    const protocol = (simulator.device.get(path+'ProtocolVersion') || [,'Any'])[1];
+    const transports = new Set(simulator.device.get(path+'DownloadTransports')[1].split(','));
+    if (
+      simulator.device.get(path+'Interface')[1].length > 256 ||
+      dscp < 0 || dscp > 63 || ethernetPriority < 0 || ethernetPriority > 7 ||
+      tbtDuration < 0 || tbtDuration > 999 || tbtInterval < 0 || tbtInterval > 999 || tbtOffset < 0 || tbtOffset > 255 ||
+      tbtOffset > tbtInterval || tbtInterval > tbtDuration ||
+      !(protocol === "Any" || protocol === "IPv4" || protocol === "IPv6") || 
+      parseInt(simulator.device.get(path+'NumberOfConnections')[1]) < 1 ||
+      !(transports.has('HTTP') || transports.has('FTP'))
+    ) {
+      queue(simulator, 'speedtest', (simulator) => {
+        simulator.device.get(path+'DiagnosticsState')[1] = 'Error_Other';
+      }, diagnosticDuration)
+      return;
+    }
+
+    // all parameters are valid.
+    queue(simulator, 'speedtest', simulator.diagnosticsStates.speedtest.result, tbtDuration || diagnosticDuration);
+    // After the diagnostic is complete, the value of all result parameters (all read-only parameters in this
+    // object) MUST be retained by the CPE until either this diagnostic is run again, or the CPE reboots.
+  },
+
+  eraseResult: function(simulator, path) {
+    simulator.device.get(path+'IncrementalResultNumberOfEntries')[1] = '0';
+
+    let fields = [
+      'TestBytesReceived',
+      'TotalBytesReceived',
+      'TotalBytesSent',
+      'StartTime',
+      'EndTime',
+    ];
+
+    path += 'IncrementalResult.';
+    let i = 0;
+    while (true) {
+      const intervalPath = path+`${i}.`;
+      if (simulator.device.has(intervalPath)) {
+        for (let field of fields) {
+          simulator.device.delete(intervalPath+field);
+        }
+        simulator.device.delete(intervalPath);
+      } else {
+        simulator.device.delete(path);
+        return;
+      }
+      i++;
+    }
+
+    delete simulator.device._sortedPaths;
+  },
+
+  results: { // possible results for a speedtest diagnostic.
+    default: function(simulator) { // successful speedtest result.
+      const path = speedtest.path[simulator.TR];
+
+      simulator.device.get(path+'DiagnosticsState')[1] = 'Complete';
+
+      const tbtDuration = parseInt((simulator.device.get(path+'TimeBasedTestDuration') || [,0])[1]);
+      const tbtInterval = parseInt((simulator.device.get(path+'TimeBasedTestMeasurementInterval') || [,0])[1]);
+      const tbtOffset = parseInt((simulator.device.get(path+'TimeBasedTestMeasurementOffset') || [,0])[1]);
+      let duration = tbtDuration || diagnosticDuration/1000; // in seconds.
+
+      const date = new Date(); // current date, to be used as end date.
+      let d = new Date(date); // copy of current date, to be used in date arithmetic.
+      d.setSeconds(d.getSeconds()-duration+tbtOffset); // this works for both time based and file size based testing.
+      
+      simulator.device.get(path+'TCPOpenRequestTime')[1] = d.toISOString().replace('Z', '000Z');
+      d.setMilliseconds(d.getMilliseconds()+2);
+      simulator.device.get(path+'TCPOpenResponseTime')[1] = d.toISOString().replace('Z', '000Z');
+      d.setMilliseconds(d.getMilliseconds()+2);
+      simulator.device.get(path+'ROMTime')[1] = d.toISOString().replace('Z', '000Z');
+      d.setMilliseconds(d.getMilliseconds()+2);
+      simulator.device.get(path+'BOMTime')[1] = d.toISOString().replace('Z', '000Z');
+      simulator.device.get(path+'EOMTime')[1] = date.toISOString().replace('Z', '000Z');
+
+      const throughput = 104857600; // 100MB/s.
+      let v;
+      const total = throughput*duration; // 100MB/s throughput throughout the duration.
+      if (v = simulator.device.get(path+'PeriodOfFullLoading')) v[1] = ''+duration*0.95*10**6|0; // 95% of the duration.
+      if (v = simulator.device.get(path+'TestBytesReceived')) v[1] = `${total}`;
+      if (v = simulator.device.get(path+'TotalBytesReceived')) v[1] = `${total*1.05}`;
+      if (v = simulator.device.get(path+'TotalBytesSent')) v[1] = `${total*0.02}`;
+      if (v = simulator.device.get(path+'TestBytesReceivedUnderFullLoading')) v[1] = `${total*0.9}`;
+      if (v = simulator.device.get(path+'TotalBytesReceivedUnderFullLoading')) v[1] = `${total*0.9*1.05}`;
+      if (v = simulator.device.get(path+'TotalBytesSentUnderFullLoading')) v[1] = `${total*0.9*0.02}`;
+      
+      if (tbtInterval) {
+        speedtest.eraseResult(simulator, path);
+
+        const n = tbtDuration/tbtInterval|0;
+        simulator.device.get(path+'IncrementalResultNumberOfEntries')[1] = n.toString();
+
+        path += 'IncrementalResult.'
+        simulator.device.set(path, [false]);
+
+        const total = throughput*tbtInterval; // 100MB/s throughput throughout the duration.
+        // const remainder = tbtDuration%tbtInterval;
+
+        for (let i = 1; i <= n; i++) {
+          const intervalPath = path+`${i}.`;
+          simulator.device.set(intervalPath, [false]);
+          simulator.device.set(intervalPath+'TestBytesReceived', [false, `${total}`, 'xsd:unsignedInt']);
+          simulator.device.set(intervalPath+'TotalBytesReceived', [false, `${total*1.05}`, 'xsd:unsignedInt']);
+          simulator.device.set(intervalPath+'TotalBytesSent', [false, `${total*0.02}`, 'xsd:unsignedInt']);
+          simulator.device.set(intervalPath+'StartTime', [false, d.toISOString().replace('Z', '000Z'), 'xsd:dateTime']);
+          d.setSeconds(d.getSeconds()+tbtInterval);
+          simulator.device.set(intervalPath+'EndTime', [false, d.toISOString().replace('Z', '000Z'), 'xsd:dateTime']);
+        }
+      }
+    },
+    error: function(simulator, err='Error_Internal') { // internal error.
+      const path = speedtest.path[simulator.TR];
+      speedtest.eraseResult(simulator, path);
+      simulator.device.get(path+'DiagnosticsState')[1] = err;
+    },
+    timeout: function(simulator) { // internal error.
+      speedtest.results.error(simulator, 'Error_Timeout');
+    },
+    failed: function(simulator) { // internal error.
+      speedtest.results.error(simulator, 'Error_TransferFailed');
+    },
+    noresponse: function(simulator) { // internal error.
+      speedtest.results.error(simulator, 'Error_NoResponse');
+    },
+    noroute: function(simulator) { // internal error.
+      speedtest.results.error(simulator, 'Error_NoRouteToHost');
+    },
+  },
+};
+exports.speedtest = speedtest;
