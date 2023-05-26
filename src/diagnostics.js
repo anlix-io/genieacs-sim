@@ -107,18 +107,18 @@ const ping = {
       }, diagnosticDuration);
       return;
     }
-    const dataBlockSize = parseInt(simulator.device.get(path+'DataBlockSize')[1]);
-    const dscp = parseInt(simulator.device.get(path+'DSCP')[1]);
+    const dataBlockSize = parseInt((simulator.device.get(path+'DataBlockSize') || [,1])[1]);
+    const dscp = parseInt((simulator.device.get(path+'DSCP') || [,0])[1]);
     // checking other parameter's.
     if (
       // The value of 'Interface' MUST be either a valid interface or an empty string. An attempt to set that
       // parameter to a different value MUST be rejected as an invalid parameter value. If an empty string is
       // specified, the CPE MUST use the interface as directed by its routing policy (Forwarding table entries)
       // to determine the appropriate interface.
-      simulator.device.get(path+'Interface')[1].length > 256 ||
+      (simulator.device.get(path+'Interface') || [,''])[1].length > 256 ||
       !(dataBlockSize >= 1 && dataBlockSize < 65536) || !(dscp > -1 && dscp < 64) ||
-      !(parseInt(simulator.device.get(path+'Timeout')[1]) > 0) ||
-      !(parseInt(simulator.device.get(path+'NumberOfRepetitions')[1]) > 0)
+      !((parseInt(simulator.device.get(path+'Timeout') || [,1000])[1]) > 0) ||
+      !((parseInt(simulator.device.get(path+'NumberOfRepetitions') || [,1])[1]) > 0)
     ) {
       queue(simulator, 'ping', (simulator) => {
         simulator.device.get(path+'DiagnosticsState')[1] = 'Error_Other';
@@ -188,10 +188,10 @@ const traceroute = {
       }, diagnosticDuration);
       return;
     }
-    const numberOfTries = parseInt(simulator.device.get(path+'NumberOfTries')[1]);
-    const dataBlockSize = parseInt(simulator.device.get(path+'DataBlockSize')[1]);
-    const dscp = parseInt(simulator.device.get(path+'DSCP')[1]);
-    const maxHopCount = parseInt(simulator.device.get(path+'MaxHopCount')[1]);
+    const numberOfTries = parseInt((simulator.device.get(path+'NumberOfTries') || [,1])[1]);
+    const dataBlockSize = parseInt((simulator.device.get(path+'DataBlockSize') || [,1])[1]);
+    const dscp = parseInt((simulator.device.get(path+'DSCP') || [,'0'])[1]);
+    const maxHopCount = parseInt((simulator.device.get(path+'MaxHopCount') || [,30])[1]);
     // checking other parameter's.
     if (
       simulator.device.get(path+'Interface')[1].length > 256 ||
@@ -443,8 +443,8 @@ const speedtest = {
       return;
     }
     // checking other parameter's.
-    const dscp = parseInt(simulator.device.get(path+'DSCP')[1]);
-    const ethernetPriority = parseInt(simulator.device.get(path+'EthernetPriority')[1]);
+    const dscp = parseInt((simulator.device.get(path+'DSCP') || [,0])[1]);
+    const ethernetPriority = parseInt((simulator.device.get(path+'EthernetPriority') || [,0])[1]);
     const tbtDuration = parseInt((simulator.device.get(path+'TimeBasedTestDuration') || [,0])[1]);
     const tbtInterval = parseInt((simulator.device.get(path+'TimeBasedTestMeasurementInterval') || [,0])[1]);
     const tbtOffset = parseInt((simulator.device.get(path+'TimeBasedTestMeasurementOffset') || [,0])[1]);
