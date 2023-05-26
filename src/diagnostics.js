@@ -190,13 +190,13 @@ const traceroute = {
     }
     const numberOfTries = parseInt((simulator.device.get(path+'NumberOfTries') || [,1])[1]);
     const dataBlockSize = parseInt((simulator.device.get(path+'DataBlockSize') || [,1])[1]);
-    const dscp = parseInt((simulator.device.get(path+'DSCP') || [,'0'])[1]);
+    const dscp = parseInt((simulator.device.get(path+'DSCP') || [,0])[1]);
     const maxHopCount = parseInt((simulator.device.get(path+'MaxHopCount') || [,30])[1]);
     // checking other parameter's.
     if (
-      simulator.device.get(path+'Interface')[1].length > 256 ||
+      (simulator.device.get(path+'Interface') || [,''])[1].length > 256 ||
       numberOfTries < 1 || numberOfTries > 3 ||
-      parseInt(simulator.device.get(path+'Timeout')[1]) < 1 ||
+      (parseInt(simulator.device.get(path+'Timeout') || [,1000])[1]) < 1 ||
       dataBlockSize < 1 || dataBlockSize > 65535 || dscp < 0 || dscp > 63 ||
       maxHopCount < 1 || maxHopCount > 64
     ) {
