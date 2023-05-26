@@ -157,7 +157,11 @@ class Simulator extends EventEmitter {
     if (v = this.device.get("InternetGatewayDevice.DeviceInfo.SerialNumber")) v[1] = this.serialNumber;
 
     if (v = this.device.get("InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress")) v[1] = this.mac;
+    else if (v = this.device.get("InternetGatewayDevice.LANDevice.1.LANHostConfigManagement.MACAddress")) v[1] = this.mac;
     if (v = this.device.get("Device.Ethernet.Interface.1.MACAddress")) v[1] = this.mac;
+    else if (v = this.device.get("Device.Ethernet.Interface.2.MACAddress")) v[1] = this.mac;
+    else if (v = this.device.get("Device.Ethernet.Link.1.MACAddress")) v[1] = this.mac;
+
 
     let username = "";
     let password = "";
