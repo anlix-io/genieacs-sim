@@ -1211,7 +1211,7 @@ Device.IP.Diagnostics,true,2023-04-26T18:51:36.573Z,false,2023-04-26T18:51:36.57
 Device.IP.Diagnostics.DownloadDiagnostics,true,2023-04-26T21:58:17.999Z,false,2023-04-26T21:58:17.999Z,"",,,,,,
 Device.IP.Diagnostics.DownloadDiagnostics.BOMTime,false,2023-04-26T22:00:19.011Z,false,2023-04-26T22:00:19.011Z,"2023-04-26T22:00:16.489Z",xsd:dateTime,2023-04-26T22:00:19.013Z,,,,
 Device.IP.Diagnostics.DownloadDiagnostics.DSCP,false,2023-04-26T22:00:19.011Z,true,2023-04-26T22:00:19.011Z,"0",xsd:unsignedInt,2023-04-26T22:00:19.013Z,,,,
-Device.IP.Diagnostics.DownloadDiagnostics.DiagnosticsState,false,2023-04-26T22:00:19.011Z,true,2023-04-26T22:00:19.011Z,"Running",xsd:string,2023-04-26T22:00:19.013Z,,,,
+Device.IP.Diagnostics.DownloadDiagnostics.DiagnosticsState,false,2023-04-26T22:00:19.011Z,true,2023-04-26T22:00:19.011Z,"None",xsd:string,2023-04-26T22:00:19.013Z,,,,
 Device.IP.Diagnostics.DownloadDiagnostics.DownloadDiagnosticMaxConnections,false,2023-04-26T22:00:19.011Z,false,2023-04-26T22:00:19.011Z,"3",xsd:unsignedInt,2023-04-26T22:00:19.013Z,,,,
 Device.IP.Diagnostics.DownloadDiagnostics.DownloadTransports,false,2023-04-26T22:00:19.011Z,true,2023-04-26T22:00:19.011Z,"HTTP",xsd:string,2023-04-26T22:00:19.013Z,,,,
 Device.IP.Diagnostics.DownloadDiagnostics.DownloadURL,false,2023-04-26T22:00:19.011Z,true,2023-04-26T22:00:19.011Z,"http://192.168.88.6:25752/measure/tr069/file_1920KB.bin",xsd:string,2023-04-26T22:00:19.013Z,,,,

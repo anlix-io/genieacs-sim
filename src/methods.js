@@ -29,96 +29,97 @@ const INFORM_PARAMS = [
 
 function inform(simulator, event) {
   const device = simulator.device;
+  let v;
   let manufacturer = "";
-  if (device["DeviceID.Manufacturer"]) {
+  if (v = device.get("DeviceID.Manufacturer")) {
     manufacturer = xmlUtils.node(
       "Manufacturer",
       {},
-      xmlParser.encodeEntities(device["DeviceID.Manufacturer"][1])
+      xmlParser.encodeEntities(v[1])
     );
-  } else if (device["Device.DeviceInfo.Manufacturer"]) {
+  } else if (v = device.get("Device.DeviceInfo.Manufacturer")) {
     manufacturer = xmlUtils.node(
       "Manufacturer",
       {}, 
-      xmlParser.encodeEntities(device["Device.DeviceInfo.Manufacturer"][1])
+      xmlParser.encodeEntities(v[1])
     );
-  } else if (device["InternetGatewayDevice.DeviceInfo.Manufacturer"]) {
+  } else if (v = device.get("InternetGatewayDevice.DeviceInfo.Manufacturer")) {
     manufacturer = xmlUtils.node(
       "Manufacturer",
       {},
-      xmlParser.encodeEntities(device["InternetGatewayDevice.DeviceInfo.Manufacturer"][1])
+      xmlParser.encodeEntities(v[1])
     );
   }
 
   let oui = "";
-  if (device["DeviceID.OUI"]) {
+  if (v = device.get("DeviceID.OUI")) {
     oui = xmlUtils.node(
       "OUI",
       {},
-      xmlParser.encodeEntities(device["DeviceID.OUI"][1])
+      xmlParser.encodeEntities(v[1])
     );
-  } else if (device["Device.DeviceInfo.ManufacturerOUI"]) {
+  } else if (v = device.get("Device.DeviceInfo.ManufacturerOUI")) {
     oui = xmlUtils.node(
       "OUI",
       {},
-      xmlParser.encodeEntities(device["Device.DeviceInfo.ManufacturerOUI"][1])
+      xmlParser.encodeEntities(v[1])
     );
-  } else if (device["InternetGatewayDevice.DeviceInfo.ManufacturerOUI"]) {
+  } else if (v = device.get("InternetGatewayDevice.DeviceInfo.ManufacturerOUI")) {
     oui = xmlUtils.node(
       "OUI",
       {},
-      xmlParser.encodeEntities(device["InternetGatewayDevice.DeviceInfo.ManufacturerOUI"][1])
+      xmlParser.encodeEntities(v[1])
     );
   }
 
   let productClass = "";
-  if (device["DeviceID.ProductClass"]) {
+  if (v = device.get("DeviceID.ProductClass")) {
     productClass = xmlUtils.node(
       "ProductClass",
       {},
-      xmlParser.encodeEntities(device["DeviceID.ProductClass"][1])
+      xmlParser.encodeEntities(v[1])
     );
-  } else if (device["Device.DeviceInfo.ProductClass"]) {
+  } else if (v = device.get("Device.DeviceInfo.ProductClass")) {
     productClass = xmlUtils.node(
       "ProductClass",
       {},
-      xmlParser.encodeEntities(device["Device.DeviceInfo.ProductClass"][1])
+      xmlParser.encodeEntities(v[1])
     );
-  } else if (device["InternetGatewayDevice.DeviceInfo.ProductClass"]) {
+  } else if (v = device.get("InternetGatewayDevice.DeviceInfo.ProductClass")) {
     productClass = xmlUtils.node(
       "ProductClass",
       {},
-      xmlParser.encodeEntities(device["InternetGatewayDevice.DeviceInfo.ProductClass"][1])
+      xmlParser.encodeEntities(v[1])
     );
   }
 
   let serialNumber = "";
-  if (device["DeviceID.SerialNumber"]) {
+  if (v = device.get("DeviceID.SerialNumber")) {
     serialNumber = xmlUtils.node(
       "SerialNumber",
       {},
-      xmlParser.encodeEntities(device["DeviceID.SerialNumber"][1])
+      xmlParser.encodeEntities(v[1])
     );
-  } else if (device["Device.DeviceInfo.SerialNumber"]) {
+  } else if (v = device.get("Device.DeviceInfo.SerialNumber")) {
     serialNumber = xmlUtils.node(
       "SerialNumber",
       {},
-      xmlParser.encodeEntities(device["Device.DeviceInfo.SerialNumber"][1])
+      xmlParser.encodeEntities(v[1])
       );
-  } else if (device["InternetGatewayDevice.DeviceInfo.SerialNumber"]) {
+  } else if (v = device.get("InternetGatewayDevice.DeviceInfo.SerialNumber")) {
     serialNumber = xmlUtils.node(
       "SerialNumber",
       {},
-      xmlParser.encodeEntities(device["InternetGatewayDevice.DeviceInfo.SerialNumber"][1])
+      xmlParser.encodeEntities(v[1])
     );
   }
 
   let macAddr = "";
-  if (device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"]) {
+  if (v = device.get("InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress")) {
     macAddr = xmlUtils.node(
       "MACAddress",
       {},
-      xmlParser.encodeEntities(device["InternetGatewayDevice.LANDevice.1.LANEthernetInterfaceConfig.1.MACAddress"][1])
+      xmlParser.encodeEntities(v[1])
     );
   }
 
@@ -139,7 +140,7 @@ function inform(simulator, event) {
 
   let params = [];
   for (let p of INFORM_PARAMS) {
-    let param = device[p];
+    let param = device.get(p);
     if (!param)
       continue;
 
@@ -168,7 +169,7 @@ function inform(simulator, event) {
 function getSortedPaths(device) {
   if (device._sortedPaths) return device._sortedPaths;
   const ignore = new Set(["DeviceID", "Downloads", "Tags", "Events", "Reboot", "FactoryReset", "VirtalParameters"]);
-  device._sortedPaths = Object.keys(device).filter(p => p[0] !== "_" && !ignore.has(p.split(".")[0])).sort();
+  device._sortedPaths = Array.from(device.keys()).filter(p => p[0] !== "_" && !ignore.has(p.split(".")[0])).sort();
   return device._sortedPaths;
 }
 
@@ -211,7 +212,7 @@ function GetParameterNames(simulator, request) {
     params.push(
       xmlUtils.node("ParameterInfoStruct", {}, [
         xmlUtils.node("Name", {}, p),
-        xmlUtils.node("Writable", {}, String(device[p][0]))
+        xmlUtils.node("Writable", {}, String(device.get(p)[0]))
       ])
     );
   }
@@ -237,8 +238,7 @@ function GetParameterValues(simulator, request) {
   let params = []
   for (let p of parameterNames) {
     let name = p.text;
-    let value = device[name][1];
-    let type = device[name][2];
+    let [_, value, type] = device.get(name);
     let valueStruct = xmlUtils.node("ParameterValueStruct", {}, [
       xmlUtils.node("Name", {}, name),
       xmlUtils.node("Value", { "xsi:type": type }, xmlParser.encodeEntities(value))
@@ -275,12 +275,12 @@ function SetParameterValues(simulator, request) {
         case "Value":
           value = c;
           break;
-            
       }
     }
 
-    device[name][1] = xmlParser.decodeEntities(value.text);
-    device[name][2] = xmlParser.parseAttrs(value.attrs).find(a => a.localName === "type").value;
+    const v = device.get(name);
+    v[1] = xmlParser.decodeEntities(value.text);
+    v[2] = xmlParser.parseAttrs(value.attrs).find(a => a.localName === "type").value;
     modified[name] = true;
   }
 
@@ -300,10 +300,10 @@ function AddObject(simulator, request) {
   let objectName = request.children[0].text;
   let instanceNumber = 1;
 
-  while (device[`${objectName}${instanceNumber}.`])
+  while (device.get(`${objectName}${instanceNumber}.`))
     instanceNumber += 1;
 
-  device[`${objectName}${instanceNumber}.`] = [true];
+  device.set(`${objectName}${instanceNumber}.`, [true]);
 
   const defaultValues = {
     "xsd:boolean": "false",
@@ -315,8 +315,10 @@ function AddObject(simulator, request) {
   for (let p of getSortedPaths(device)) {
     if (p.startsWith(objectName) && p.length > objectName.length) {
       let n = `${objectName}${instanceNumber}${p.slice(p.indexOf(".", objectName.length))}`;
-      if (!device[n])
-        device[n] = [device[p][0], defaultValues[device[p][2]] || "", device[p][2]];
+      if (!device.get(n)) {
+        const v = device.get(p);
+        device.set(n, [v[0], defaultValues[v[2]] || "", v[2]]);
+      }
     }
   }
 
@@ -333,9 +335,9 @@ function DeleteObject(simulator, request) {
   const device = simulator.device;
   let objectName = request.children[0].text;
 
-  for (let p in device) {
+  for (let p of device.keys()) {
     if (p.startsWith(objectName))
-      delete device[p];
+      device.delete(p);
   }
 
   let response = xmlUtils.node("cwmp:DeleteObjectResponse", {}, xmlUtils.node("Status", {}, "0"));
