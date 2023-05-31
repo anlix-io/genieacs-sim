@@ -107,18 +107,18 @@ const ping = {
       }, diagnosticDuration);
       return;
     }
-    const dataBlockSize = parseInt(simulator.device.get(path+'DataBlockSize')[1]);
-    const dscp = parseInt(simulator.device.get(path+'DSCP')[1]);
+    const dataBlockSize = parseInt((simulator.device.get(path+'DataBlockSize') || [,1])[1]);
+    const dscp = parseInt((simulator.device.get(path+'DSCP') || [,0])[1]);
     // checking other parameter's.
     if (
       // The value of 'Interface' MUST be either a valid interface or an empty string. An attempt to set that
       // parameter to a different value MUST be rejected as an invalid parameter value. If an empty string is
       // specified, the CPE MUST use the interface as directed by its routing policy (Forwarding table entries)
       // to determine the appropriate interface.
-      simulator.device.get(path+'Interface')[1].length > 256 ||
+      (simulator.device.get(path+'Interface') || [,''])[1].length > 256 ||
       !(dataBlockSize >= 1 && dataBlockSize < 65536) || !(dscp > -1 && dscp < 64) ||
-      !(parseInt(simulator.device.get(path+'Timeout')[1]) > 0) ||
-      !(parseInt(simulator.device.get(path+'NumberOfRepetitions')[1]) > 0)
+      !((parseInt(simulator.device.get(path+'Timeout') || [,1000])[1]) > 0) ||
+      !((parseInt(simulator.device.get(path+'NumberOfRepetitions') || [,1])[1]) > 0)
     ) {
       queue(simulator, 'ping', (simulator) => {
         simulator.device.get(path+'DiagnosticsState')[1] = 'Error_Other';
@@ -188,15 +188,15 @@ const traceroute = {
       }, diagnosticDuration);
       return;
     }
-    const numberOfTries = parseInt(simulator.device.get(path+'NumberOfTries')[1]);
-    const dataBlockSize = parseInt(simulator.device.get(path+'DataBlockSize')[1]);
-    const dscp = parseInt(simulator.device.get(path+'DSCP')[1]);
-    const maxHopCount = parseInt(simulator.device.get(path+'MaxHopCount')[1]);
+    const numberOfTries = parseInt((simulator.device.get(path+'NumberOfTries') || [,1])[1]);
+    const dataBlockSize = parseInt((simulator.device.get(path+'DataBlockSize') || [,1])[1]);
+    const dscp = parseInt((simulator.device.get(path+'DSCP') || [,0])[1]);
+    const maxHopCount = parseInt((simulator.device.get(path+'MaxHopCount') || [,30])[1]);
     // checking other parameter's.
     if (
-      simulator.device.get(path+'Interface')[1].length > 256 ||
+      (simulator.device.get(path+'Interface') || [,''])[1].length > 256 ||
       numberOfTries < 1 || numberOfTries > 3 ||
-      parseInt(simulator.device.get(path+'Timeout')[1]) < 1 ||
+      (parseInt(simulator.device.get(path+'Timeout') || [,1000])[1]) < 1 ||
       dataBlockSize < 1 || dataBlockSize > 65535 || dscp < 0 || dscp > 63 ||
       maxHopCount < 1 || maxHopCount > 64
     ) {
@@ -213,14 +213,16 @@ const traceroute = {
   eraseResult: function(simulator, path) { // erasing old results.
     simulator.device.get(path+'RouteHopsNumberOfEntries')[1] = '0';
 
+    const fieldSuffix = simulator.TR === 'tr069' ? 'Hop' : '';
+
     let hop = 1; // starts from 1.
     while (true) {
       const routeHop = path+`RouteHops.${hop}.`;
       if (simulator.device.has(routeHop)) {
-        simulator.device.delete(routeHop+'HopHost');
-        simulator.device.delete(routeHop+'HopHostAddress');
-        simulator.device.delete(routeHop+'HopErrorCode');
-        simulator.device.delete(routeHop+'HopRTTimes');
+        simulator.device.delete(routeHop+fieldSuffix+'Host');
+        simulator.device.delete(routeHop+fieldSuffix+'HostAddress');
+        simulator.device.delete(routeHop+fieldSuffix+'ErrorCode');
+        simulator.device.delete(routeHop+fieldSuffix+'RTTimes');
         simulator.device.delete(routeHop);
       } else {
         simulator.device.delete(path+'RouteHops.');
@@ -247,6 +249,8 @@ const traceroute = {
     path += 'RouteHops.';
     simulator.device.set(path, [false]); // adding "RouteHops" node to the data model.
 
+    const fieldSuffix = simulator.TR === 'tr069' ? 'Hop' : '';
+
     // hop indexes start from 1. 'rtt' is a simulation of the round trip time increase with each following hop.
     for (let hop = 1, rtt = 5; hop <= hops; hop++, rtt += 5) {
       const hopPath = path+`${hop}.` // path for the i-th hop.
@@ -256,7 +260,7 @@ const traceroute = {
       let hopHostAddress = `123.123.${123+hop}.123`;
       // if we are not forcing the max amount of hops in the last iteration, that means 
       // the last iteration has reached the target host.
-      if (!forcedMaxHops && hop === hops-1) {
+      if (!forcedMaxHops && hop === hops) {
         hopHost = host; // we will use the 'Host' attribute as the 'HopHost' value.
         // And if the 'Host' value is an IP address, 'HopHostAddress' will be empty.
         if (hopHost.match(/\d{1,3}(\.\d{1,3}){3}/)) hopHostAddress = '';
@@ -264,16 +268,16 @@ const traceroute = {
       }
       // Result parameter indicating the Host Name if DNS is able to resolve or IP Address of a hop along
       // the discovered route.
-      simulator.device.set(hopPath+'HopHost', [false, hopHost, 'xsd:string']);
+      simulator.device.set(hopPath+fieldSuffix+'Host', [false, hopHost, 'xsd:string']);
       // If this parameter is non empty it will contain the last IP address of the host returned for this hop and the
       // HopHost will contain the Host Name returned from the reverse DNS query.
-      simulator.device.set(hopPath+'HopHostAddress', [false, hopHostAddress, 'xsd:string']);
+      simulator.device.set(hopPath+fieldSuffix+'HostAddress', [false, hopHostAddress, 'xsd:string']);
       // Contains the error code returned for this hop. This code is directly from the ICMP CODE field.
-      simulator.device.set(hopPath+'HopErrorCode', [false, 0, 'xsd:unsignedInt']);
+      simulator.device.set(hopPath+fieldSuffix+'ErrorCode', [false, 0, 'xsd:unsignedInt']);
       // Contains the comma separated list of one or more round trip times in milliseconds (one for each
       // repetition) for this hop.
       let hopRtTimes = [(rtt*1.01).toFixed(3), (rtt*0.975).toFixed(3), (rtt*1.025).toFixed(3)].slice(0, tries).toString();
-      simulator.device.set(hopPath+'HopRTTimes', [false, hopRtTimes, 'xsd:string']);
+      simulator.device.set(hopPath+fieldSuffix+'RTTimes', [false, hopRtTimes, 'xsd:string']);
     }
   },
 
@@ -443,8 +447,8 @@ const speedtest = {
       return;
     }
     // checking other parameter's.
-    const dscp = parseInt(simulator.device.get(path+'DSCP')[1]);
-    const ethernetPriority = parseInt(simulator.device.get(path+'EthernetPriority')[1]);
+    const dscp = parseInt((simulator.device.get(path+'DSCP') || [,0])[1]);
+    const ethernetPriority = parseInt((simulator.device.get(path+'EthernetPriority') || [,0])[1]);
     const tbtDuration = parseInt((simulator.device.get(path+'TimeBasedTestDuration') || [,0])[1]);
     const tbtInterval = parseInt((simulator.device.get(path+'TimeBasedTestMeasurementInterval') || [,0])[1]);
     const tbtOffset = parseInt((simulator.device.get(path+'TimeBasedTestMeasurementOffset') || [,0])[1]);
