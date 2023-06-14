@@ -1,53 +1,88 @@
+const models = require('./models');
+
+// 'lanDevice' should be an object that may contain values for the following attributes: radio, active, source, name,
+// mac, ip, interface, leaseTime, band, mode, rssi, snr, rate. Any attribute that is not present will be filled
+// with a default value. Attribute 'radio' defines if the LAN device will be added to Wi-Fi 2.4Ghz when it equals 2,
+// Wi-Fi 5.0Ghz when it equals 5 or cable when it equals undefined. Default is cable. Attribute 'mac', when not given
+// will be filled with a random one.
 exports.addLanDevice = function (lanDevice) {
   if (!lanDevice) return; // returns when no 'lanDevice' given in argument.
-  if (!(lanDevice.HostName && lanDevice.IPAddress && lanDevice.MACAddress)) return; // required fields.
 
-  let hostsPath = this.TR === 'tr069'
-    ? 'InternetGatewayDevice.LANDevice.1.Hosts.'
-    : 'Device.Hosts.';
+  const deviceId = this.device.get('DeviceID.ID');
+  const model = models[deviceId ? deviceId[1] : ''];
 
-  const numberOfEntriesNode = this.device.get(hostsPath+'HostNumberOfEntries');
-  const index = parseInt(numberOfEntriesNode[1])+1; // current entry number is 'number of entries'+1.
-  numberOfEntriesNode[1] = index.toString(); // saving incremented number of entries.
-  
-  // 'InternetGatewayDevice.LANDevice.1.Hosts.Host' already exists,
-  // so we don't have to create it and, also, we seem to not need it.
-  hostsPath += `Host.${index}.`;
-  this.device.set(hostsPath, [true]); // creating parent node for host in i-th index.
-  let v = lanDevice['Active']; // taking value.
-  if (v && v.constructor === Boolean) { // checking 'lanDevice' attribute's data type.
-  	this.device.set(hostsPath+'Active', [false, v.toString(), 'xsd:boolean']); // adding key value pair for attribute.
+  // radio should be 2, 5 or undefined, for models the we know the exact path.
+  // radio 2 is 2.4Ghz, radio 5 is 5.0Ghz and radio undefined means cable.
+  const radio = lanDevice['radio'];
+  if (model && (radio != 2 && radio != 5 && radio !== undefined)) return;
+
+  delete this.device._sortedPaths; // cleaning list of paths.
+
+  let hostsPath = model ? model.hosts.path
+                : this.TR === 'tr069' ? 'InternetGatewayDevice.LANDevice.1.Hosts.'
+                : 'Device.Hosts.';
+
+  // Adding to Hosts section.
+  const hosts = model.hosts; // hosts parameters structure.
+  let hostPath = hostsPath+'Host.';
+  const hostIndex = getNextIndexInPath(this, hostPath);
+  lanDevice.hostIndex = hostIndex;
+  this.device.get(hostsPath+'HostNumberOfEntries')[1] = hostIndex.toString(); // saving incremented number of entries.
+
+  // 'InternetGatewayDevice.LANDevice.1.Hosts.Host' already exists, so we don't have to create it.
+  hostPath += `${hostIndex}.`;
+  this.device.set(hostPath, [false]); // creating parent node for host in i-th index.
+  addFieldsToPath(this, hostPath, lanDevice, hosts.fields);
+
+  // Adding to AssociatedDevice section.
+  // if no 'radio' then it's cable and 'AssociatedDevice' should not be filled.
+  // if no 'model' then we don't know how to fill 'AssociatedDevice'.
+  if (!model || !radio) return;
+  const associated_device = model.associated_device;
+  let associatedDevicePath = associated_device['path'+radio];
+  const associatedDeviceIndex = getNextIndexInPath(this, associatedDevicePath);
+  lanDevice.associatedDeviceIndex = associatedDeviceIndex;
+  associatedDevicePath += `${associatedDeviceIndex}.`;
+  createNodesForPath(this, associatedDevicePath);
+  addFieldsToPath(this, associatedDevicePath, lanDevice, associated_device.fields);
+}
+
+// Adds 'lanDevice' parameters for each of the given 'fields' at the 'path' in the 'simulator' model.
+// If 'lanDevice' doesn't have a parameter, the default value in 'fields' will be used.
+// 'fields' should taken from value of any exported key from file "./models.js".
+function addFieldsToPath(simulator, path, lanDevice, fields) {
+  for (let k in fields) { // for all listed fields in the model.
+    const field = fields[k];
+    let v = lanDevice[k]; // take value lan device to be created.
+    if (v !== undefined) {
+      if (!field.valid(v)) continue; // if value is not valid, continue to next field.
+      if (field.format) v = field.format(v); // if field has a format value should be formatted.
+    } else {
+      v = field.default || ''; // if no default value, we use an empty string.
+      // if default is a function, we use its return.
+      if (v.constructor === Function) v = v(lanDevice, simulator);
+      // if given value is undefined, no need to format the default value.
+    }
+    simulator.device.set(path+field.key, [false, v, field.type]);
   }
-  v = lanDevice['AddressSource'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'AddressSource', [false, v, 'xsd:string']);
-  v = lanDevice['ClientID'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'ClientID', [false, v, 'xsd:string']);
-  v = lanDevice['HostName'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'HostName', [false, v, 'xsd:string']);
-  v = lanDevice['IPAddress'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'IPAddress', [false, v, 'xsd:string']);
-  v = lanDevice['IPv4AddressNumberOfEntries'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'IPv4AddressNumberOfEntries', [false, v, 'xsd:unsignedInt']);
-  v = lanDevice['IPv6Address'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'IPv6Address', [false, v, 'xsd:string']);
-  v = lanDevice['IPv6AddressNumberOfEntries'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'IPv6AddressNumberOfEntries', [false, v, 'xsd:unsignedInt']);
-  v = lanDevice['IPv6LinkLocal'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'IPv6LinkLocal', [false, v, 'xsd:string']);
-  v = lanDevice['InterfaceType'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'InterfaceType', [false, v, 'xsd:string']);
-  v = lanDevice['Layer2Interface'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'Layer2Interface', [false, v, 'xsd:string']);
-  v = lanDevice['LeaseTimeRemaining'];
-  if (v && v.constructor === Number) this.device.set(hostsPath+'LeaseTimeRemaining', [false, v.toFixed(0), 'xsd:int']);
-  v = lanDevice['MACAddress'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'MACAddress', [false, v, 'xsd:string']);
-  v = lanDevice['PhysAddress'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'PhysAddress', [false, v, 'xsd:string']);
-  v = lanDevice['UserClassID'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'UserClassID', [false, v, 'xsd:string']);
-  v = lanDevice['VendorClassID'];
-  if (v && v.constructor === String) this.device.set(hostsPath+'VendorClassID', [false, v, 'xsd:string']);
+}
 
-  delete this.device._sortedPaths;
+// creates non leaf nodes for given path.
+function createNodesForPath(simulator, fullPath) {
+  let steps = fullPath
+    .split('.')
+    .slice(0, -1); // 'fullPath' should end with a '.', therefore we take out the last element.
+  for (let path = steps[0]+'.'; steps.length > 0; path += steps[0]+'.') {
+    steps.shift();
+    if (simulator.device.has(path)) continue;
+    simulator.device.set(path, [false]); // creating non leaf nodes.
+  }
+}
+
+// given a 'path' of a 'simulator' model, returns first non existing index, starting from 1.
+// this is useful for paths that are lists, like: 'Device.Hosts.*'.
+function getNextIndexInPath(simulator, path) {
+  let index = 1;
+  while (simulator.device.has(path+index)) index++;
+  return index;
 }
