@@ -19,7 +19,7 @@ exports.addLanDevice = function (lanDevice) {
   delete this.device._sortedPaths; // cleaning list of paths.
 
   let hostsPath = model ? model.hosts.path
-                : this.TR === 'tr069' ? 'InternetGatewayDevice.LANDevice.1.Hosts.'
+                : this.TR === 'tr098' ? 'InternetGatewayDevice.LANDevice.1.Hosts.'
                 : 'Device.Hosts.';
 
   // Adding to Hosts section.

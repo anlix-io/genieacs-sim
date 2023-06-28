@@ -101,7 +101,7 @@ class Simulator extends EventEmitter {
     this.periodicInformsDisabled = periodicInformsDisabled; // controls sending periodic informs or not.
 
     // defining which cwmp model version this device is using.
-    if (this.device.get('InternetGatewayDevice.ManagementServer.URL')) this.TR = 'tr069';
+    if (this.device.get('InternetGatewayDevice.ManagementServer.URL')) this.TR = 'tr098';
     else if (this.device.get('Device.ManagementServer.URL')) this.TR = 'tr181';
 
     for (let key in diagnostics) {

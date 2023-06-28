@@ -27,7 +27,7 @@ const basicDefaultRadioMode = (landDevice) => landDevice.radio === 2 ? 'n' : 'ac
 const basicDefaultInterface = (landDevice) => landDevice.radio !== undefined ? '802.11' : 'Ethernet';
 const tplinkDefaultInterface = (landDevice) => landDevice.radio !== undefined ? 'Wi-Fi' : '';
 const defautIpv4 = (landDevice, simulator) => {
-  const ipParts = simulator.device.get(simulator.TR === 'tr069'
+  const ipParts = simulator.device.get(simulator.TR === 'tr098'
     ? 'InternetGatewayDevice.LANDevice.1.LANHostConfigManagement.IPInterface.1.IPInterfaceIPAddress'
     : 'Device.IP.Interface.1.IPv4Address.1.IPAddress'
   )[1].split('.'); // getting CPE dhcp server IP.
