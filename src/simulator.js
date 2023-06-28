@@ -239,6 +239,7 @@ class Simulator extends EventEmitter {
     clearTimeout(this.nextInformTimeout); // clears timeout in case there is an scheduled session.
     this.nextInformTimeout = null;
 
+    this.emit('sessionStart');
     try {
       let body = methods.inform(this, event);
       await this.sendRequest(body);
@@ -248,6 +249,7 @@ class Simulator extends EventEmitter {
     }
 
     this.nextInformTimeout = undefined; // the soonest point where session has ended.
+    this.emit('sessionEnd');
     
     this.setNextPeriodicInform(); // sets timeout for next periodic inform.
     
