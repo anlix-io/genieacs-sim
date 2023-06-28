@@ -362,35 +362,48 @@ function Download(simulator, request) {
   let faultCode = "9010";
   let faultString = "Download timeout";
 
-  if (url.startsWith("http://")) {
-    http.get(url, (res) => {
-      res.on("end", () => {
-        if (res.statusCode === 200) {
-          faultCode = "0";
-          faultString = "";
+  let client;
+  if (url.startsWith("http://")) client = http;
+  else if (url.startsWith("https://")) client = https;
+
+  if (client) {
+    client.get(url, (res) => {
+      if (res.statusCode === 200) {
+        faultCode = "0";
+        faultString = "";
+      } else {
+        faultCode = "9016";
+        faultString = `Unexpected response ${res.statusCode}`;
+        res.resume(); // Consume response data to free up memory.
+        return;
+      }
+
+      let body = [];
+      res.on("data", (chunk) => body.push(chunk));
+      res.on("end", async () => {
+        body = body.join('');
+        
+        // if data is in JSON format containing the new software version,
+        // we update the 'SoftwareVersion' in the model tree.
+        let data;
+        try {
+          data = JSON.parse(body.toString('utf8'));
+        } catch (e) {
+          // in case of error, ignore content.
+          console.log('Error parsing Download body to json.', e)
+          console.log('File content:', body)
         }
-        else {
-          faultCode = "9016";
-          faultString = `Unexpected response ${res.statusCode}`;
+        // console.log('download data', data);
+        if (data !== undefined && data.constructor === Object && data.version) {
+          simulator.device.get(simulator.TR === 'tr098'
+            ? 'InternetGatewayDevice.DeviceInfo.SoftwareVersion'
+            : 'Device.DeviceInfo.SoftwareVersion')[1] = data.version;
         }
+
+        // creating a new session where transfer complete message is sent.
+        // waiting 2 seconds before sending pending 'TransferComplete'.
+        setTimeout(() => simulator.runPendingEvents(async () => await simulator.startSession()), 2000);
       });
-      res.resume();
-    }).on("error", (err) => {
-      faultString = err.message;
-    });
-  } else if (url.startsWith("https://")) {
-    https.get(url, (res) => {
-      res.on("end", () => {
-        if (res.statusCode === 200) {
-          faultCode = "0";
-          faultString = "";
-        }
-        else {
-          faultCode = "9016";
-          faultString = `Unexpected response ${res.statusCode}`;
-        }
-      });
-      res.resume();
     }).on("error", (err) => {
       faultString = err.message;
     });
