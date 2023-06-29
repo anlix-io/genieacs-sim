@@ -69,9 +69,8 @@ function addFieldsToPath(simulator, path, lanDevice, fields) {
 
 // creates non leaf nodes for given path.
 function createNodesForPath(simulator, fullPath) {
-  let steps = fullPath
-    .split('.')
-    .slice(0, -1); // 'fullPath' should end with a '.', therefore we take out the last element.
+  let steps = fullPath.split('.')
+  if (steps[steps.length-1] === '') steps.pop();
   for (let path = steps[0]+'.'; steps.length > 0; path += steps[0]+'.') {
     steps.shift();
     if (simulator.device.has(path)) continue;
@@ -83,6 +82,6 @@ function createNodesForPath(simulator, fullPath) {
 // this is useful for paths that are lists, like: 'Device.Hosts.*'.
 function getNextIndexInPath(simulator, path) {
   let index = 1;
-  while (simulator.device.has(path+index)) index++;
+  while (simulator.device.has(path+index+'.')) index++;
   return index;
 }
