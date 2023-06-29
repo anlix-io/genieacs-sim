@@ -53,7 +53,7 @@ exports.addLanDevice = function (lanDevice) {
 function addFieldsToPath(simulator, path, lanDevice, fields) {
   for (let k in fields) { // for all listed fields in the model.
     const field = fields[k];
-    let v = lanDevice[k]; // take value lan device to be created.
+    let v = lanDevice[k]; // taking value from LAN device to be created.
     if (v !== undefined) {
       if (!field.valid(v)) continue; // if value is not valid, continue to next field.
       if (field.format) v = field.format(v); // if field has a format value should be formatted.
