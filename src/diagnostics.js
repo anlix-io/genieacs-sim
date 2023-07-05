@@ -52,7 +52,7 @@ const getRandomFromArray = (array) => array[Math.random()*array.length|0];
 
 const ping = {
   path: {
-    tr069: 'InternetGatewayDevice.IPPingDiagnostics.',
+    tr098: 'InternetGatewayDevice.IPPingDiagnostics.',
     tr181: 'Device.IP.Diagnostics.IPPing.',
   },
 
@@ -153,7 +153,7 @@ exports.ping = ping;
 
 const traceroute = {
   path: {
-    tr069: 'InternetGatewayDevice.TraceRouteDiagnostics.',
+    tr098: 'InternetGatewayDevice.TraceRouteDiagnostics.',
     tr181: 'Device.IP.Diagnostics.TraceRoute.',
   },
 
@@ -213,7 +213,7 @@ const traceroute = {
   eraseResult: function(simulator, path) { // erasing old results.
     simulator.device.get(path+'RouteHopsNumberOfEntries')[1] = '0';
 
-    const fieldSuffix = simulator.TR === 'tr069' ? 'Hop' : '';
+    const fieldSuffix = simulator.TR === 'tr098' ? 'Hop' : '';
 
     let hop = 1; // starts from 1.
     while (true) {
@@ -249,7 +249,7 @@ const traceroute = {
     path += 'RouteHops.';
     simulator.device.set(path, [false]); // adding "RouteHops" node to the data model.
 
-    const fieldSuffix = simulator.TR === 'tr069' ? 'Hop' : '';
+    const fieldSuffix = simulator.TR === 'tr098' ? 'Hop' : '';
 
     // hop indexes start from 1. 'rtt' is a simulation of the round trip time increase with each following hop.
     for (let hop = 1, rtt = 5; hop <= hops; hop++, rtt += 5) {
@@ -408,7 +408,7 @@ exports.sitesurvey = sitesurvey;
 
 const speedtest = {
   path: {
-    tr069: 'InternetGatewayDevice.DownloadDiagnostics.',
+    tr098: 'InternetGatewayDevice.DownloadDiagnostics.',
     tr181: 'Device.IP.Diagnostics.DownloadDiagnostics.',
   },
 
