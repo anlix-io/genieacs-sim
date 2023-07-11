@@ -23,13 +23,10 @@ if (cluster.isMaster) {
     console.error(`Invalid ACS URL: "${program.opts().acsUrl}"`);
     process.exit(1);
   }
-  for (
-    let baseMac = 281474959933440, i = 0;
-    i < program.opts().processes;
-    baseMac++, i++
-  ) {
+  let baseMac = parseInt(process.env['GENIEACS_SIM_BASE_MAC_ADDRESS']) || 281474959933440; 
+  for ( let i = 0; i < program.opts().processes; baseMac++, i++ ) {
     setTimeout(function() {
-      var usedMac = baseMac.toString(16).toUpperCase().slice(-12).match(/../g).join(':');
+      let usedMac = baseMac.toString(16).padStart(12,'0').toUpperCase().slice(-12).match(/../g).join(':');
       let env = {
         "MAC_ADDR": usedMac,
         "SERIAL_NUMBER": `00000${program.opts().serial + i}`.slice(-6),
