@@ -25,8 +25,8 @@ if (cluster.isMaster) {
   }
   let baseMac = parseInt(process.env['GENIEACS_SIM_BASE_MAC_ADDRESS']) || 281474959933440; 
   for ( let i = 0; i < program.opts().processes; baseMac++, i++ ) {
+    let usedMac = baseMac.toString(16).padStart(12,'0').toUpperCase().slice(-12).match(/../g).join(':');
     setTimeout(function() {
-      let usedMac = baseMac.toString(16).padStart(12,'0').toUpperCase().slice(-12).match(/../g).join(':');
       let env = {
         "MAC_ADDR": usedMac,
         "SERIAL_NUMBER": `00000${program.opts().serial + i}`.slice(-6),
