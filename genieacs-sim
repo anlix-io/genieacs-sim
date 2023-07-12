@@ -67,14 +67,14 @@ if (cluster.isMaster) {
   // }).on('requested', (request) => {
   //   console.log(`- [${new Date().toISOString()}] RECEIVED REQUEST FROM ACS.`);
   // }).on('sent', (request) => {
-  //   // console.log(`- [${new Date().toISOString()}] SENT BODY '${formatXML(request.body)}'.`);
-  //   console.log(`- [${new Date().toISOString()}] SENT BODY '${extractXmlContent(request.body)}'.`);
+  //   console.log(`- [${new Date().toISOString()}] SENT BODY '${formatXML(request.body)}'.`);
+  //   // console.log(`- [${new Date().toISOString()}] SENT BODY '${extractXmlContent(request.body)}'.`);
   // }).on('response', (response) => {
-  //   // console.log(`- [${new Date().toISOString()}] RECEIVED RESPONSE BODY '${formatXML(response.body)}'.`);
-  //   console.log(`- [${new Date().toISOString()}] RECEIVED RESPONSE BODY '${extractXmlContent(response.body)}'.`);
+  //   console.log(`- [${new Date().toISOString()}] RECEIVED RESPONSE BODY '${formatXML(response.body)}'.`);
+  //   // console.log(`- [${new Date().toISOString()}] RECEIVED RESPONSE BODY '${extractXmlContent(response.body)}'.`);
   // }).on('task', (task) => {
-  //   // console.log('- [${new Date().toISOString()}] PROCESSED task', JSON.stringify(task, null, '  '));
-  //   console.log(`- [${new Date().toISOString()}] PROCESSED task '${task.localName}'.`);
+  //   console.log(`- [${new Date().toISOString()}] PROCESSED task`, JSON.stringify(task, null, '  '));
+    // console.log(`- [${new Date().toISOString()}] PROCESSED task '${task.localName}'.`);
   // }).on('diagnostic', (name) => {
   //   console.log(`- [${new Date().toISOString()}] FINISHED diagnostic '${name}'.`);
   });

@@ -5,6 +5,7 @@ const https = require("https");
 const xmlParser = require("./xml-parser");
 const xmlUtils = require("./xml-utils");
 const diagnostics = require("./diagnostics");
+const models = require('./models');
 
 const INFORM_PARAMS = [
   "Device.DeviceInfo.SpecVersion",
@@ -298,26 +299,35 @@ function SetParameterValues(simulator, request) {
 function AddObject(simulator, request) {
   const device = simulator.device;
   let objectName = request.children[0].text;
-  let instanceNumber = 1;
+  let instanceNumber;
+  
+  const deviceId = device.get('DeviceID.ID');
+  const model = models[deviceId && deviceId[1]];
 
-  while (device.get(`${objectName}${instanceNumber}.`))
-    instanceNumber += 1;
+  if (model && model.addObject && model.addObject[objectName]) {
+    instanceNumber = model.addObject[objectName](simulator, objectName);
+  } else {
+    instanceNumber = 1;
 
-  device.set(`${objectName}${instanceNumber}.`, [true]);
+    while (device.has(`${objectName}${instanceNumber}.`))
+      instanceNumber += 1;
 
-  const defaultValues = {
-    "xsd:boolean": "false",
-    "xsd:int": "0",
-    "xsd:unsignedInt": "0",
-    "xsd:dateTime": "0001-01-01T00:00:00Z"
-  };
+    device.set(`${objectName}${instanceNumber}.`, [true]);
 
-  for (let p of getSortedPaths(device)) {
-    if (p.startsWith(objectName) && p.length > objectName.length) {
-      let n = `${objectName}${instanceNumber}${p.slice(p.indexOf(".", objectName.length))}`;
-      if (!device.get(n)) {
-        const v = device.get(p);
-        device.set(n, [v[0], defaultValues[v[2]] || "", v[2]]);
+    const defaultValues = {
+      "xsd:boolean": "false",
+      "xsd:int": "0",
+      "xsd:unsignedInt": "0",
+      "xsd:dateTime": "0001-01-01T00:00:00Z"
+    };
+
+    for (let p of getSortedPaths(device)) {
+      if (p.startsWith(objectName) && p.length > objectName.length) {
+        let n = `${objectName}${instanceNumber}${p.slice(p.indexOf(".", objectName.length))}`;
+        if (!device.has(n)) {
+          const v = device.get(p);
+          device.set(n, [v[0], defaultValues[v[2]] || "", v[2]]);
+        }
       }
     }
   }
