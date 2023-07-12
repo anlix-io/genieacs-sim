@@ -22,6 +22,11 @@ jobs:
         with:
           node-version: 12
 
+      - name: Getting branch version
+        run: |
+              BRANCH=${GITHUB_REF##*/}
+              echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+
       - name: NPM Publishing
         uses: JS-DevTools/npm-publish@v1
         with:
