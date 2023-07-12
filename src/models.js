@@ -1,6 +1,4 @@
-// const possibleRssiFieldNames = ['SignalStrength', 'AssociatedDeviceRssi', 'X_HW_RSSI', 'RSSI',
-//   'X_TP_StaSignalStrength', 'X_ZTE-COM_RSSI', 'X_ZTE-COM_WLAN_RSSI', 'X_DLINK_RSSI', 'X_CT-COM_RSSI',
-//   'WLAN_RSSI', 'X_ITBS_WLAN_ClientSignalStrength', 'X_ITBS_WLAN_ClientSignalStrength'];
+const utils = require('./manipulations_utils')
 
 // validation.
 const typeIs = (v, t) => v.constructor === t;
@@ -38,6 +36,132 @@ const defautIpv4 = (landDevice, simulator) => {
   return ipParts.join('.');
 }
 
+// returns a new object that copies the values of first and overwrites each of first object's values with 
+// the values of the second.
+const copy = (obj, modifications={}) => {
+  let ret = {};
+  for (let k in obj) ret[k] = modifications[k] || obj[k];
+  return ret;
+};
+// returns a new object that copies the values of both given objects but prefers the values of the second,
+// removing null and undefined values.
+const merge = (obj1, obj2) => {
+  let ret = {};
+  for (let k in obj1) ret[k] = obj1[k];
+  for (let k in obj2) ret[k] = obj2[k];
+  
+  let needsDelete = false;
+  for (let k in ret) {
+    if (!ret[k]) {
+      needsDelete = true;
+      break;
+    }
+  }
+  if (needsDelete) {
+    let ret2 = {};
+    let v;
+    for (let k in ret) {
+      v = ret[k];
+      if (v) ret2[k] = v;
+    }
+    ret = ret2;
+  }
+
+  return ret;
+}
+
+const addDeviceBlockWlanAccessControl = (simulator, path, pathsWithSharedIndex) => {
+  const newIndex = Math.max(...pathsWithSharedIndex.map((p) => utils.getNextIndexInPath(simulator, p)));
+  path += newIndex+'.';
+
+  simulator.device.set(path, [true]);
+  simulator.device.set(path+'Name', [true, '', 'xsd:string']);
+  simulator.device.set(path+'MACAddress', [true, '00:00:00:00:00:00', 'xsd:string']);
+
+  return newIndex;
+};
+const addDeviceBlockMultilaser = (simulator, path) => addDeviceBlockWlanAccessControl(simulator, path, [
+  'InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.X_ZTE-COM_AccessControl.',
+  'InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.X_ZTE-COM_AccessControl.',
+]);
+const addDeviceBlockMacAccessControl = (simulator, path) => {
+  const newIndex = utils.getNextIndexInPath(simulator, path);
+  path += newIndex+'.';
+
+  simulator.device.set(path, [true]);
+  simulator.device.set(path+'Enable', [true, 'false', 'xsd:boolean']);
+  simulator.device.set(path+'Mode', [true, '', 'xsd:string']);
+  simulator.device.set(path+'Name', [true, '', 'xsd:string']);
+  simulator.device.set(path+'DestinationMACAddress', [true, '00:00:00:00:00:00', 'xsd:string']);
+  simulator.device.set(path+'Protocol', [true, '', 'xsd:string']);
+  simulator.device.set(path+'SourceMACAddress', [true, '00:00:00:00:00:00', 'xsd:string']);
+  simulator.device.set(path+'Type', [true, '', 'xsd:string']);
+
+  return newIndex;
+};
+
+// a starting point for port mapping parameters.
+const portMappingDefaultParams = {
+  'PortMappingEnabled': {value: 'false', type: 'xsd:boolean'},
+  'ExternalPort': {value: '0', type: 'xsd:unsignedInt'},
+  'InternalPort': {value: '0', type: 'xsd:unsignedInt'},
+  'InternalClient': {value: '', type: 'xsd:string'},
+  'ExternalPortEndRange': {value: '0', type: 'xsd:unsignedInt'},
+  'PortMappingLeaseDuration': {value: '0', type: 'xsd:unsignedInt'},
+  'PortMappingDescription': {value: '', type: 'xsd:string'},
+};
+// model specific port mapping parameters.
+const portMappingTpLinkTr098Params = merge(portMappingDefaultParams, {
+  'X_TP_ExternalPortEnd': {value: '0', type: 'xsd:unsignedInt'},
+  'X_TP_InternalPortEnd': {value: '0', type: 'xsd:unsignedInt'},
+  'ServiceName': {value: '', type: 'xsd:string'},
+  'PortMappingDescription': null,
+});
+const portMappingTpLinkTr181Params = merge(portMappingDefaultParams, {
+  'PortMappingEnabled': null,
+  'PortMappingDescription': null,
+
+  'Enable': {value: 'false', type: 'xsd:boolean'},
+  'Protocol': {value: '', type: 'xsd:string'},
+  'Alias': {value: '', type: 'xsd:string'},
+  'RemoteHost': {value: '', type: 'xsd:string'},
+  'Interface': {value: '', type: 'xsd:string'},
+});
+const portMappingHuaweiParams = merge(portMappingDefaultParams, {
+  'X_HW_InternalEndPort': {value: '0', type: 'xsd:unsignedInt'},
+});
+const portMappingMultilaserParams = merge(portMappingDefaultParams, {
+  'X_ZTE-COM_InternalPortEndRange': {value: '0', type: 'xsd:unsignedInt'},
+  'RemoteHost': {value: '', type: 'xsd:string'},
+});
+const portMappingNokiaParams = merge(portMappingDefaultParams, {
+  'X_ASB_COM_InternalPortEnd': {value: '0', type: 'xsd:unsignedInt'},
+  'RemoteHost': {value: '', type: 'xsd:string'},
+});
+// adds port mapping parameters fields inside path and returns the created entry index when a AddObject is received.
+const addPortMapping = (simulator, path, portMappingParams) => {
+  const parentpath = path.split('.').slice(0, -2).join('.')+'.';
+  const newIndex = utils.getNextIndexInPath(simulator, path);
+  path += newIndex+'.';
+
+  simulator.device.set(path, [true]);
+  simulator.device.get(parentpath+'PortMappingNumberOfEntries')[1] = newIndex.toString();
+  for (let key in portMappingParams) {
+    let param = portMappingParams[key];
+    if (!param) continue;
+    simulator.device.set(path+key, [true, param.value, param.type]);
+  }
+
+  return newIndex;
+};
+// model specific port mapping AddObject logic.
+const addPortMappingTpLinkTr098 = (simulator, path) => addPortMapping(simulator, path, portMappingTpLinkTr098Params);
+const addPortMappingTpLinkTr181 = (simulator, path) => addPortMapping(simulator, path, portMappingTpLinkTr181Params);
+const addPortMappingHuawei = (simulator, path) => addPortMapping(simulator, path, portMappingHuaweiParams);
+const addPortMappingMultilaser = (simulator, path) => addPortMapping(simulator, path, portMappingMultilaserParams);
+const addPortMappingNokia = (simulator, path) => addPortMapping(simulator, path, portMappingNokiaParams);
+
+
 // a starting point of each field that belongs to 'Hosts' and 'AssociatedDevice' through several models.
 const standard = {
   active: {key: 'Active', type: 'xsd:boolean', default: 'true', valid: isBoolean, format: toString},
@@ -52,13 +176,6 @@ const standard = {
   rssi: {key: 'SignalStrength', type: 'xsd:int', default: '-57', valid: isRssi, format: toInteger},
   snr: {key: 'SignalNoiseRatio', type: 'xsd:int', default: '42', valid: isPositiveNumber, format: toInteger},
   rate: {key: 'LastDataTransmitRate', type: 'xsd:unsignedInt', default: '144000', valid: isPositiveNumber, format: toInteger},
-};
-
-// returns a new object that copies the values of both given objects but prefers the values of the second.
-const copy = (obj, modifications={}) => {
-  let ret = {};
-  for (let k in obj) ret[k] = modifications[k] || obj[k];
-  return ret;
 };
 
 // For each model, contains the necessary fields to be added to 'Hosts' and 'AssociatedDevice' according to an actual CPE. 
@@ -93,6 +210,9 @@ module.exports = { // key is simulator.device.get('DeviceID.ID').
         rate: copy(standard.rate, {key: 'X_TP_StaConnectionSpeed'}),
       },
     },
+    addObject: {
+      'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1.PortMapping.': addPortMappingTpLinkTr098,
+    }
   },
   '9CA2F4-EC220%2DG5-22275K2000315': { // tplink EC220-G5 V3.
     hosts: {
@@ -114,7 +234,7 @@ module.exports = { // key is simulator.device.get('DeviceID.ID').
         mode: standard.mode,
         rssi: standard.rssi,
         rate: copy(standard.rate, {key: 'LastDataDownlinkRate'}),
-      }
+      },
     },
   },
   '1C61B4-Device2-2226469000523': { // tplink EX220.
@@ -137,7 +257,10 @@ module.exports = { // key is simulator.device.get('DeviceID.ID').
         mac: standard.mac,
         rssi: copy(standard.rssi, {type: 'xsd:unsignedInt', default: '110', valid: isPositiveNumber}),
         rate: copy(standard.rate, {key: 'LastDataDownlinkRate'}),
-      }
+      },
+    },
+    addObject: {
+      'Device.NAT.PortMapping.': addPortMappingTpLinkTr181,
     },
   },
   '1C61B4-Device2-22275A7000395': { // tplink XX230V.
@@ -159,7 +282,11 @@ module.exports = { // key is simulator.device.get('DeviceID.ID').
         mac: standard.mac,
         rssi: copy(standard.rssi, {type: 'xsd:unsignedInt', default: '110', valid: isPositiveNumber}),
         rate: copy(standard.rate, {key: 'LastDataDownlinkRate'}),
-      }
+      },
+    },
+    addObject: {
+      'Device.Hosts.AccessControl.': addDeviceBlockMacAccessControl,
+      'Device.NAT.PortMapping.': addPortMappingTpLinkTr181,
     },
   },
   'C0B101-ZXHN%20H199A-ZTEYH86LCN10105': { // multilaser H199.
@@ -184,7 +311,12 @@ module.exports = { // key is simulator.device.get('DeviceID.ID').
         snr: copy(standard.snr, {key: 'X_ZTE-COM_SNR'}),
         rate: copy(standard.rate, {key: 'AssociatedDeviceRate'}),
         rssi: copy(standard.rssi, {key: 'AssociatedDeviceRssi'}),
-      }
+      },
+    },
+    addObject: {
+      'InternetGatewayDevice.LANDevice.1.WLANConfiguration.1.X_ZTE-COM_AccessControl.': addDeviceBlockMultilaser,
+      'InternetGatewayDevice.LANDevice.1.WLANConfiguration.5.X_ZTE-COM_AccessControl.': addDeviceBlockMultilaser,
+      'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.2.PortMapping.': addPortMappingMultilaser,
     },
   },
   '00E04C-W5%2D2100G-D8365F659C6E': { // intelbras w5 2100g.
@@ -206,7 +338,7 @@ module.exports = { // key is simulator.device.get('DeviceID.ID').
       fields: {
         mac: copy(standard.mac, {key: 'AssociatedDeviceMACAddress'}),
         rate: copy(standard.rate, {type: 'xsd:string', default: (d) => d.radio === 2 ? '6' : '24'}),
-      }
+      },
     },
   },
   '00259E-EG8145V5-48575443A94196A5': { // Huawei EG8145 V5
@@ -231,7 +363,11 @@ module.exports = { // key is simulator.device.get('DeviceID.ID').
         snr: copy(standard.snr, {key: 'X_HW_SNR'}),
         rssi: copy(standard.rssi, {key: 'X_HW_RSSI'}),
         rate: copy(standard.rate, {key: 'X_HW_TxRate'}),
-      }
+      },
+    },
+    addObject: {
+      'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.4.WANPPPConnection.1.PortMapping.': addPortMappingHuawei,
+      'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.PortMapping.': addPortMappingHuawei,
     },
   },
   '9075BC-G%2D1425G%2DA-ALCLFC265D6F': { // Nokia G-1425G-A
@@ -257,6 +393,9 @@ module.exports = { // key is simulator.device.get('DeviceID.ID').
         rate: copy(standard.rate, {key: 'LastDataDownlinkRate', type: 'xsd:int', default: '144000'}),
         rssi: standard.rssi,
       },
+    },
+    addObject: {
+      'InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.PortMapping.': addPortMappingNokia,
     },
   },
 };
