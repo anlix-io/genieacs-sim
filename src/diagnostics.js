@@ -1,5 +1,3 @@
-const methods = require("./methods");
-
 const event = '8 DIAGNOSTICS COMPLETE';
 const diagnosticDuration = 2000; // in milliseconds.
 
@@ -15,7 +13,7 @@ async function finish(simulator, name, func, afterMilliseconds, resolve) {
 
     simulator.runPendingEvents(async () => {
       await simulator.startSession(event); // creating a new session where diagnostic complete message is sent.
-      resolve(); // next diagnostic can be executed after calling 'resolve()'.
+      resolve(name); // next diagnostic can be executed after calling 'resolve()'.
       simulator.emit('diagnostic', name); // sent diagnostic completion event to ACS and got a response.
     });
   }, afterMilliseconds);
@@ -24,12 +22,10 @@ async function finish(simulator, name, func, afterMilliseconds, resolve) {
 async function queue(simulator, name, func, afterMilliseconds) {
   // When requested, the CPE SHOULD wait until after completion of the communication session
   // with the ACS before starting the diagnostic.
-  simulator.diagnosticQueue.push(() =>
-    new Promise((resolve, reject) => {
-      simulator.diagnosticsStates[name].reject = reject; // saving reject so we can interrupt diagnostic.
-      finish(simulator, name, func, afterMilliseconds, resolve);
-    })
-  );
+  simulator.diagnosticQueue.push(() => new Promise((resolve, reject) => {
+    simulator.diagnosticsStates[name].reject = reject; // saving reject so we can interrupt diagnostic.
+    finish(simulator, name, func, afterMilliseconds, resolve);
+  }));
 }
 
 // clears diagnostic timeout and rejects the diagnostic.
@@ -37,7 +33,7 @@ function interrupt(simulator, name) {
   const state = simulator.diagnosticsStates[name];
   clearTimeout(state.running);
   if (state.reject) {
-    state.reject();
+    state.reject(name);
     state.reject = undefined;
   }
   state.running = undefined;
@@ -107,18 +103,19 @@ const ping = {
       }, diagnosticDuration);
       return;
     }
-    const dataBlockSize = parseInt((simulator.device.get(path+'DataBlockSize') || [,1])[1]);
-    const dscp = parseInt((simulator.device.get(path+'DSCP') || [,0])[1]);
+    const interface = (simulator.device.get(path+'Interface') || [,''])[1];
+    const timeout = parseInt((simulator.device.get(path+'Timeout') || [,1000])[1]); // unsignedInt[1:] .
+    const NumberOfRepetitions = parseInt((simulator.device.get(path+'NumberOfRepetitions') || [,1])[1]); // unsignedInt[1:].
+    const dataBlockSize = parseInt((simulator.device.get(path+'DataBlockSize') || [,1])[1]); // unsignedInt[1:65535].
+    const dscp = parseInt((simulator.device.get(path+'DSCP') || [,0])[1]); // unsignedInt[0:63].
     // checking other parameter's.
     if (
       // The value of 'Interface' MUST be either a valid interface or an empty string. An attempt to set that
       // parameter to a different value MUST be rejected as an invalid parameter value. If an empty string is
       // specified, the CPE MUST use the interface as directed by its routing policy (Forwarding table entries)
       // to determine the appropriate interface.
-      (simulator.device.get(path+'Interface') || [,''])[1].length > 256 ||
-      !(dataBlockSize >= 1 && dataBlockSize < 65536) || !(dscp > -1 && dscp < 64) ||
-      !((parseInt(simulator.device.get(path+'Timeout') || [,1000])[1]) > 0) ||
-      !((parseInt(simulator.device.get(path+'NumberOfRepetitions') || [,1])[1]) > 0)
+      interface.length > 256 || timeout < 1 || NumberOfRepetitions < 1 || 
+      dataBlockSize < 1 || dataBlockSize > 65535 || dscp < 0 || dscp > 63
     ) {
       queue(simulator, 'ping', (simulator) => {
         simulator.device.get(path+'DiagnosticsState')[1] = 'Error_Other';
@@ -188,17 +185,16 @@ const traceroute = {
       }, diagnosticDuration);
       return;
     }
+    const interface = (simulator.device.get(path+'Interface') || [,''])[1];
     const numberOfTries = parseInt((simulator.device.get(path+'NumberOfTries') || [,1])[1]);
+    const timeout = parseInt((simulator.device.get(path+'Timeout') || [,1000])[1]);
     const dataBlockSize = parseInt((simulator.device.get(path+'DataBlockSize') || [,1])[1]);
     const dscp = parseInt((simulator.device.get(path+'DSCP') || [,0])[1]);
     const maxHopCount = parseInt((simulator.device.get(path+'MaxHopCount') || [,30])[1]);
     // checking other parameter's.
     if (
-      (simulator.device.get(path+'Interface') || [,''])[1].length > 256 ||
-      numberOfTries < 1 || numberOfTries > 3 ||
-      (parseInt(simulator.device.get(path+'Timeout') || [,1000])[1]) < 1 ||
-      dataBlockSize < 1 || dataBlockSize > 65535 || dscp < 0 || dscp > 63 ||
-      maxHopCount < 1 || maxHopCount > 64
+      interface.length > 256 || numberOfTries < 1 || numberOfTries > 3 || timeout < 1 ||
+      dataBlockSize < 1 || dataBlockSize > 65535 || dscp < 0 || dscp > 63 || maxHopCount < 1 || maxHopCount > 64
     ) {
       queue(simulator, 'traceroute', (simulator) => {
         simulator.device.get(path+'DiagnosticsState')[1] = 'Error_MaxHopCountExceeded';

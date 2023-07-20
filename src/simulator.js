@@ -65,8 +65,8 @@ class InvalidTaskNameError extends Error {
 
 class Simulator extends EventEmitter {
   device; serialNumber; mac; acsUrl; verbose; periodicInformsDisabled;
-  requestOptions; http; httpAgent; basicAuth; server;
-  nextInformTimeout; pendingAcsRequest;
+  requestOptions; http; httpAgent; basicAuth; server; enabled;
+  onGoingSession; nextInformTimeout; pendingAcsRequest;
   pendingMessages = [];
   pendingEvents = [];
   diagnosticsStates = {}; // state data for available diagnostics.
@@ -79,7 +79,7 @@ class Simulator extends EventEmitter {
   // ready: after it has finished it's post boot communication with the ACS.
     // no argument.
   // requested: when it receives a connection request.
-    // event passes an http.IncomingMessage instance as argument.
+    // no argument.
   // sent: when it sends a request to the ACS.
     // event passes an http.ClientRequest instance as argument.
   // response: when it receives a response from the ACS after sending a request to it.
@@ -89,7 +89,11 @@ class Simulator extends EventEmitter {
   // task: when a task is executed fully executed and responded to ACS
     // event passes the parsed task structure and a tree of objects;
   // diagnostic: when a diagnostic is finished ACS has been notified.
-   // event passes the name of the finished diagnostic.
+    // event passes the name of the finished diagnostic.
+  // sessionStart: when a session is going to be started with a message to the ACS.
+    // event passes the cwmp event string as argument.
+  // sessionEnd: after both ACS and CPE send empty strings.
+    // event passes the cwmp event string as argument.
 
   constructor(device, serialNumber, mac, acsUrl, verbose, periodicInformsDisabled) {
     super();
@@ -142,6 +146,7 @@ class Simulator extends EventEmitter {
       await new Promise((resolve) => this.server.close(resolve));
       this.server = undefined;
     }
+    this.enabled = false; // flags this simulator as not working (because javascript don't let us delete objects).
   }
 
   async start() { // this can throw an error.
@@ -149,6 +154,7 @@ class Simulator extends EventEmitter {
       console.log(`Simulator ${this.serialNumber} already started`);
       return;
     }
+    this.enabled = true; // flags this simulator as a working simulator (because javascript don't let us delete objects).
 
     let v; // auxiliary variable to store a simulator.device value of a key.
 
@@ -216,7 +222,12 @@ class Simulator extends EventEmitter {
           if (this.verbose) console.log(`Simulator ${this.serialNumber} got connection request`);
           res.end();
           this.emit('requested');
-          this.startSession("6 CONNECTION REQUEST");
+          // A session is ongoing when nextInformTimeout === null
+          if (this.onGoingSession) {
+            this.pendingAcsRequest = true;
+          } else {
+            this.startSession("6 CONNECTION REQUEST");
+          }
         }).listen(port, ip, (err) => {
           if (err) throw err;
           if (this.verbose) {
@@ -229,17 +240,14 @@ class Simulator extends EventEmitter {
     });
   }
 
-  async startSession(event) {
-    // A session is ongoing when nextInformTimeout === null
-    if (this.nextInformTimeout === null) {
-      this.pendingAcsRequest = true;
-      return;
-    }
-    this.pendingAcsRequest = false;
-    clearTimeout(this.nextInformTimeout); // clears timeout in case there is an scheduled session.
-    this.nextInformTimeout = null;
+  async startSession(event="2 PERIODIC") {
+    if (!this.enabled) return; // if simulator has been shutdown, ignore new session.
 
-    this.emit('sessionStart');
+    this.onGoingSession = true; // session starts here.
+    clearTimeout(this.nextInformTimeout); // clears timeout in case there is an scheduled session.
+    this.emit('sessionStart', event);
+    this.pendingAcsRequest = false;
+
     try {
       let body = methods.inform(this, event);
       await this.sendRequest(body);
@@ -248,9 +256,12 @@ class Simulator extends EventEmitter {
       console.log('Simulator internal error.', e);
     }
 
-    this.nextInformTimeout = undefined; // the soonest point where session has ended.
-    this.emit('sessionEnd');
+    this.onGoingSession = false; // the soonest point where session has ended.
+    this.emit('sessionEnd', event);
     
+    // if ACS has sent a request during a session, we start a new session.
+    if (this.pendingAcsRequest) return this.startSession();
+
     this.setNextPeriodicInform(); // sets timeout for next periodic inform.
     
     this.runRequestedDiagnostics(); // executing diagnostic after session has ended.
@@ -271,9 +282,9 @@ class Simulator extends EventEmitter {
     let headers = {};
     if (!requestId) requestId = Math.random().toString(36).slice(-8);
     let xml = content ? createSoapDocument(requestId, content) : undefined;
-    let body = xml ||  "";
+    let reqBody = xml ||  "";
 
-    headers["Content-Length"] = body.length;
+    headers["Content-Length"] = reqBody.length;
     headers["Content-Type"] = "text/xml; charset=\"utf-8\"";
     headers["Authorization"]= this.basicAuth;
 
@@ -298,23 +309,23 @@ class Simulator extends EventEmitter {
           return bytes += chunk.length;
         }).on("end", () => {
           let offset = 0;
-          body = Buffer.allocUnsafe(bytes);
+          let resBody = Buffer.allocUnsafe(bytes);
 
           chunks.forEach((chunk) => {
-            chunk.copy(body, offset, 0, chunk.length);
+            chunk.copy(resBody, offset, 0, chunk.length);
             return offset += chunk.length;
           });
 
-          response.body = body.toString();
+          response.body = resBody.toString();
 
           if (Math.floor(response.statusCode / 100) !== 2) {
             let {method, href, headers} = options;
-            this.emit('error', new Error(`Unexpected response code ${response.statusCode} `+
-              `on '${JSON.stringify({method, href, headers})}': ${body}`));
+            this.emit('error', new Error(`Unexpected response code ${response.statusCode} with body '${resBody}', `+
+              `on request '${JSON.stringify({method, href, headers})}' and body '${reqBody}'.`));
             return;
           }
 
-          if (+response.headers["Content-Length"] > 0 || body.length > 0)
+          if (+response.headers["Content-Length"] > 0 || resBody.length > 0)
             xml = xmlParser.parseXml(response.body);
           else
             xml = null;
@@ -339,8 +350,8 @@ class Simulator extends EventEmitter {
           new Error(`Socket timed out after ${requestTimeout/1000} seconds.`));
       });
 
-      request.body = body;
-      request.end(body, () => {
+      request.body = reqBody;
+      request.end(reqBody, () => {
         this.emit('sent', request);
       });
     });
@@ -401,9 +412,6 @@ class Simulator extends EventEmitter {
     // if there's a timeout already running, we'll stop it before setting another.
     if (this.nextInformTimeout) clearTimeout(this.nextInformTimeout);
 
-    // if ACS has sent a request during a session, we start a new session.
-    if (this.pendingAcsRequest) return this.startSession();
-
     // if periodic inform is disabled, we don't put 'startSession()' in a timeout.
     if (this.periodicInformsDisabled) return;
 
@@ -456,8 +464,9 @@ class Simulator extends EventEmitter {
   async runPendingEvents(eventFunc) {
     if (eventFunc) this.pendingEvents.push(eventFunc);
 
-    // if there is an on going session.
-    if (this.nextInformTimeout === null) return;
+    // if there is an on going session we don't run any pending events and wait the current session
+    // to call this function again.
+    if (this.onGoingSession) return;
 
     let pendingEvent;
     while (pendingEvent = this.pendingEvents.shift()) {
