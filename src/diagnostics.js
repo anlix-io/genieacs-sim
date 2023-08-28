@@ -140,9 +140,9 @@ const ping = {
       simulator.device.get(path+'MinimumResponseTime')[1] = '9';
       simulator.device.get(path+'MaximumResponseTime')[1] = '14';
     },
-    error: function(simulator) { // internal error.
+    error: function(simulator, errorName='Error_Internal') { // internal error.
       const path = ping.path[simulator.TR];
-      simulator.device.get(path+'DiagnosticsState')[1] = 'Error_Internal';
+      simulator.device.get(path+'DiagnosticsState')[1] = errorName;
     },
   },
 };
@@ -211,14 +211,20 @@ const traceroute = {
 
     const fieldSuffix = simulator.TR === 'tr098' ? 'Hop' : '';
 
+    const fields = [
+      'Host',
+      'HostAddress',
+      'ErrorCode',
+      'RTTimes',
+    ];
+
     let hop = 1; // starts from 1.
     while (true) {
       const routeHop = path+`RouteHops.${hop}.`;
       if (simulator.device.has(routeHop)) {
-        simulator.device.delete(routeHop+fieldSuffix+'Host');
-        simulator.device.delete(routeHop+fieldSuffix+'HostAddress');
-        simulator.device.delete(routeHop+fieldSuffix+'ErrorCode');
-        simulator.device.delete(routeHop+fieldSuffix+'RTTimes');
+        for (let field of fields) {
+          simulator.device.delete(routeHop+fieldSuffix+field);
+        }
         simulator.device.delete(routeHop);
       } else {
         simulator.device.delete(path+'RouteHops.');
@@ -282,9 +288,14 @@ const traceroute = {
       const path = traceroute.path[simulator.TR];
       traceroute.produceHopResults(simulator, path, false, 8);
     },
-    error: function(simulator) { // max hop count exceeded error.
+    Error_MaxHopCountExceeded: function(simulator) { // max hop count exceeded error.
       const path = traceroute.path[simulator.TR];
       traceroute.produceHopResults(simulator, path, true)
+    },
+    error: function(simulator, errorName='Error_Internal') {
+      const path = traceroute.path[simulator.TR];
+      traceroute.eraseResult(simulator, path);
+      simulator.device.get(path+'DiagnosticsState')[1] = errorName;
     },
   },
 };
@@ -312,7 +323,7 @@ const sitesurvey = {
   eraseResult: function (simulator, path) {
     simulator.device.get(path+'ResultNumberOfEntries')[1] = '0';
 
-    let fields = [
+    const fields = [
       'BSSID',
       'BasicDataTransferRates',
       'BeaconPeriod',
@@ -393,10 +404,10 @@ const sitesurvey = {
         simulator.device.set(neighbourPath+'SupportedStandards', [false, '', 'xsd:string']);
       }
     },
-    error: function (simulator) {
+    error: function (simulator, errorName='Error_Internal') {
       const path = sitesurvey.path[simulator.TR];
       sitesurvey.eraseResult(simulator, path);
-      simulator.device.get(path+'DiagnosticsState')[1] = 'Error';
+      simulator.device.get(path+'DiagnosticsState')[1] = errorName;
     },
   },
 };
@@ -449,15 +460,18 @@ const speedtest = {
     const tbtInterval = parseInt((simulator.device.get(path+'TimeBasedTestMeasurementInterval') || [,0])[1]);
     const tbtOffset = parseInt((simulator.device.get(path+'TimeBasedTestMeasurementOffset') || [,0])[1]);
     const protocol = (simulator.device.get(path+'ProtocolVersion') || [,'Any'])[1];
-    const transports = new Set(simulator.device.get(path+'DownloadTransports')[1].split(','));
+    const transports = new Set((
+      simulator.device.get(path+'DownloadTransports') || 
+      simulator.device.get('InternetGatewayDevice.Capabilities.PerformanceDiagnostic.DownloadTransports')
+    )[1].split(','));
+    const numberOfConnections = parseInt((simulator.device.get(path+'NumberOfConnections') || [,1])[1]);
     if (
       simulator.device.get(path+'Interface')[1].length > 256 ||
       dscp < 0 || dscp > 63 || ethernetPriority < 0 || ethernetPriority > 7 ||
       tbtDuration < 0 || tbtDuration > 999 || tbtInterval < 0 || tbtInterval > 999 || tbtOffset < 0 || tbtOffset > 255 ||
       tbtOffset > tbtInterval || tbtInterval > tbtDuration ||
       !(protocol === "Any" || protocol === "IPv4" || protocol === "IPv6") || 
-      parseInt(simulator.device.get(path+'NumberOfConnections')[1]) < 1 ||
-      !(transports.has('HTTP') || transports.has('FTP'))
+      numberOfConnections < 1 || !(transports.has('HTTP') || transports.has('FTP'))
     ) {
       queue(simulator, 'speedtest', (simulator) => {
         simulator.device.get(path+'DiagnosticsState')[1] = 'Error_Other';
@@ -474,7 +488,7 @@ const speedtest = {
   eraseResult: function(simulator, path) {
     simulator.device.get(path+'IncrementalResultNumberOfEntries')[1] = '0';
 
-    let fields = [
+    const fields = [
       'TestBytesReceived',
       'TotalBytesReceived',
       'TotalBytesSent',
@@ -492,7 +506,6 @@ const speedtest = {
         }
         simulator.device.delete(intervalPath);
       } else {
-        simulator.device.delete(path);
         return;
       }
       i++;
@@ -560,21 +573,21 @@ const speedtest = {
         }
       }
     },
-    error: function(simulator, err='Error_Internal') { // internal error.
+    error: function(simulator, errorName='Error_Internal') { // internal error.
       const path = speedtest.path[simulator.TR];
       speedtest.eraseResult(simulator, path);
-      simulator.device.get(path+'DiagnosticsState')[1] = err;
+      simulator.device.get(path+'DiagnosticsState')[1] = errorName;
     },
-    timeout: function(simulator) { // internal error.
+    Error_Timeout: function(simulator) { // internal error.
       speedtest.results.error(simulator, 'Error_Timeout');
     },
     failed: function(simulator) { // internal error.
       speedtest.results.error(simulator, 'Error_TransferFailed');
     },
-    noresponse: function(simulator) { // internal error.
+    Error_NoResponse: function(simulator) { // internal error.
       speedtest.results.error(simulator, 'Error_NoResponse');
     },
-    noroute: function(simulator) { // internal error.
+    Error_NoRouteToHost: function(simulator) { // internal error.
       speedtest.results.error(simulator, 'Error_NoRouteToHost');
     },
   },
