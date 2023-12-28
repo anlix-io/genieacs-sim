@@ -246,7 +246,7 @@ const traceroute = {
     simulator.device.get(path+'RouteHopsNumberOfEntries')[1] = hops.toString();
 
     const host = simulator.device.get(path+`Host`)[1];
-    const tries = parseInt(simulator.device.get(path+'NumberOfTries')[1]);
+    const tries = parseInt((simulator.device.get(path+'NumberOfTries') || [,0])[1]) || 1;
 
     path += 'RouteHops.';
     simulator.device.set(path, [false]); // adding "RouteHops" node to the data model.

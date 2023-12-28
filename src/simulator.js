@@ -321,7 +321,7 @@ class Simulator extends EventEmitter {
           if (Math.floor(response.statusCode / 100) !== 2) {
             let {method, href, headers} = options;
             this.emit('error', new Error(`Unexpected response code ${response.statusCode} with body '${resBody}', `+
-              `on request '${JSON.stringify({method, href, headers})}' and body '${reqBody}'.`));
+              `on request '${JSON.stringify({method, href, headers})}' and body '${xmlUtils.formatXML(reqBody)}'.`));
             return;
           }
 
