@@ -9,11 +9,11 @@ if (cluster.isMaster) {
   const program = require("commander")
     .version(pkg.version)
     .description(pkg.description)
-    .option("-u, --acs-url [url]", "ACS URL to contact (default: http://127.0.0.1:57547/)", "http://127.0.0.1:57547/")
+    .option("-u, --acs-url [url]", "ACS URL to contact", "http://127.0.0.1:57547/")
     .option("-m, --data-model [filename]", "Data model template", "device-00259E-EG8145V5-48575443A94196A5-2023-03-28T154335106Z")
-    .option("-p, --processes [count]", "Number of devices to simulate (default: 1)", parseFloat, 1)
-    .option("-w, --wait [milliseconds]", "Waiting period between process spawning (default: 1000)", parseFloat, 1000)
-    .option("-s, --serial [offset]", "Base serial number (default: 0)", parseFloat, 0)
+    .option("-p, --processes [count]", "Number of devices to simulate", parseFloat, 1)
+    .option("-w, --wait [milliseconds]", "Waiting period between process spawning", parseFloat, 1000)
+    .option("-s, --serial [offset]", "Base serial number", parseFloat, 0)
     .parse(process.argv);
 
   program.parse()
