@@ -417,7 +417,7 @@ function Download(simulator, request) {
 
         // creating a new session where transfer complete message is sent.
         // waiting 2 seconds before sending pending 'TransferComplete'.
-        setTimeout(() => simulator.runPendingEvents(() => simulator.startSession()), 2000);
+        setTimeout(() => simulator.runPendingActions(() => simulator.startSession()), 2000);
       });
     }).on("error", (err) => {
       faultString = err.message;

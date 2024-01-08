@@ -13,7 +13,7 @@ async function finish(simulator, name, func, afterMilliseconds, resolve) {
     state.running = undefined; // clearing diagnostic's timeout object.
     state.reject = undefined; // clearing diagnostic's reject function.
 
-    simulator.runPendingEvents(async () => {
+    simulator.runPendingActions(async () => {
       await simulator.startSession(event); // creating a new session where diagnostic complete message is sent.
       resolve(name); // next diagnostic can be executed after calling 'resolve()'.
       simulator.emit('diagnostic', name); // sent diagnostic completion event to ACS and got a response.

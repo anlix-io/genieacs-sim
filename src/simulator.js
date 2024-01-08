@@ -116,7 +116,7 @@ class Simulator extends EventEmitter {
   pendingMessages = [];
   // Array of actions that will run, sequentially, after current session
   // finishes or, if no sessions is running, right away.
-  pendingEvents = [];
+  pendingActions = [];
 
   // Diagnostics data. Should not be touched by simulator users./ 
   // State data for available diagnostics. Each key is the name of an available
@@ -315,7 +315,7 @@ class Simulator extends EventEmitter {
 
     this.runRequestedDiagnostics(); // executing diagnostic after session has ended.
 
-    this.runPendingEvents(); // starting sessions that were waiting current session to finish.
+    this.runPendingActions(); // starting actions that were waiting current session to finish.
   }
 
   async cpeRequest() {
@@ -514,16 +514,16 @@ class Simulator extends EventEmitter {
   }
 
   // Runs queued promise function if no session is running.
-  async runPendingEvents(eventFunc) {
-    if (eventFunc) this.pendingEvents.push(eventFunc);
+  async runPendingActions(actionFunc) {
+    if (actionFunc) this.pendingActions.push(actionFunc);
 
     // if there is an on going session we don't run any pending events and wait
     // the current session to call this function again.
     if (this.onGoingSession) return;
 
-    let pendingEvent;
-    while (pendingEvent = this.pendingEvents.shift()) {
-      await pendingEvent();
+    let pendingAction;
+    while (pendingAction = this.pendingActions.shift()) {
+      await pendingAction();
     }
   }
 }
