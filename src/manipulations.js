@@ -1,5 +1,7 @@
+// Set of methods to manipulate the TR069 tree structure of a device.
+
 const models = require('./models');
-const utils = require('./manipulations_utils')
+const utils = require('./manipulations_utils');
 // 'lanDevice' should be an object that may contain values for the following attributes: radio, active, source, name,
 // mac, ip, interface, leaseTime, band, mode, rssi, snr, rate. Any attribute that is not present will be filled
 // with a default value. Attribute 'radio' defines if the LAN device will be added to Wi-Fi 2.4Ghz when it equals 2,

@@ -48,16 +48,9 @@ if (cluster.isMaster) {
     }, 10000);
   });
 } else {
-  const acsUrl = process.env["ACS_URL"];
-  const dataModel = process.env["DATA_MODEL"];
-  const serialNumber = process.env["SERIAL_NUMBER"];
-  const macAddr = process.env["MAC_ADDR"];
-
+  // Printer helpers for the simulator events.
   function print(...strings) {
     console.log(`[${new Date().toISOString()}]`, ...strings);
-  }
-  function printXML(prefix, xml, full=false) {
-    print(prefix, `'${(full ? formatXML : extractCwmpFromXML)(xml)}'.`);
   }
   function extractCwmpFromXML(xml) {
     if (!xml) return '';
@@ -66,19 +59,27 @@ if (cluster.isMaster) {
     if (!content) return;
     return content[1]+content[0];
   }
+  function printXML(prefix, xml, full=false) {
+    print(prefix, `'${(full ? formatXML : extractCwmpFromXML)(xml)}'.`);
+  }
 
-  let simulator = createSimulator(acsUrl, dataModel, serialNumber, macAddr, true)
+  const acsUrl = process.env["ACS_URL"];
+  const dataModel = process.env["DATA_MODEL"];
+  const serialNumber = process.env["SERIAL_NUMBER"];
+  const macAddr = process.env["MAC_ADDR"];
+
+  const simulator = createSimulator(acsUrl, dataModel, serialNumber, macAddr, true)
   .on('error', (e) => { // connection or task name errors during cwmp communication.
     console.error(e);
     process.exit(1);
   })
-  .on('requested', (request) => print('RECEIVED REQUEST FROM ACS'))
-  .on('sent', (request) => printXML('SENT BODY:', request.body))
-  .on('response', (response) => printXML('RECEIVED RESPONSE BODY:', response.body))
-  .on('task', (task) => print(`PROCESSED task: ${task.name}.`))
-  .on('diagnostic', (name) => print(`FINISHED diagnostic: '${name}'.`))
-  .on('sessionStart', (event) => print(`started SESSION with event: '${event}'.`))
-  .on('sessionEnd', (event) => print(`finished SESSION for event: '${event}'.`));
+  // .on('requested', (request) => print('RECEIVED REQUEST FROM ACS'))
+  // .on('sent', (request) => printXML('SENT BODY:', request.body))
+  // .on('response', (response) => printXML('RECEIVED RESPONSE BODY:', response.body))
+  // .on('task', (task) => print(`PROCESSED task: ${task.name}.`))
+  // .on('diagnostic', (name) => print(`FINISHED diagnostic: '${name}'.`))
+  // .on('sessionStart', (event) => print(`started SESSION with event: '${event}'.`))
+  // .on('sessionEnd', (event) => print(`finished SESSION for event: '${event}'.`));
   return simulator.start().catch((e) => { // Catching start error.
     console.error(e);
     process.exit(1);
