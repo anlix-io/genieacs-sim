@@ -9,11 +9,11 @@ if (cluster.isMaster) {
   const program = require("commander")
     .version(pkg.version)
     .description(pkg.description)
-    .option("-u, --acs-url [url]", "ACS URL to contact (default: http://127.0.0.1:57547/)", "http://127.0.0.1:57547/")
+    .option("-u, --acs-url [url]", "ACS URL to contact", "http://127.0.0.1:57547/")
     .option("-m, --data-model [filename]", "Data model template", "device-00259E-EG8145V5-48575443A94196A5-2023-03-28T154335106Z")
-    .option("-p, --processes [count]", "Number of devices to simulate (default: 1)", parseFloat, 1)
-    .option("-w, --wait [milliseconds]", "Waiting period between process spawning (default: 1000)", parseFloat, 1000)
-    .option("-s, --serial [offset]", "Base serial number (default: 0)", parseFloat, 0)
+    .option("-p, --processes [count]", "Number of devices to simulate", parseFloat, 1)
+    .option("-w, --wait [milliseconds]", "Waiting period between process spawning", parseFloat, 1000)
+    .option("-s, --serial [offset]", "Base serial number", parseFloat, 0)
     .parse(process.argv);
 
   program.parse()
@@ -48,37 +48,39 @@ if (cluster.isMaster) {
     }, 10000);
   });
 } else {
+  // Printer helpers for the simulator events.
+  function print(...strings) {
+    console.log(`[${new Date().toISOString()}]`, ...strings);
+  }
+  function extractCwmpFromXML(xml) {
+    if (!xml) return '';
+    // Matches all lines inside the <cwmp:something> tag.
+    const content = formatXML(xml, '    ').match(/<cwmp:\w+>[^]+(\n\s+)<\/cwmp:\w+>/);
+    if (!content) return;
+    return content[1]+content[0];
+  }
+  function printXML(prefix, xml, full=false) {
+    print(prefix, `'${(full ? formatXML : extractCwmpFromXML)(xml)}'.`);
+  }
+
   const acsUrl = process.env["ACS_URL"];
   const dataModel = process.env["DATA_MODEL"];
   const serialNumber = process.env["SERIAL_NUMBER"];
   const macAddr = process.env["MAC_ADDR"];
 
-  function extractXmlContent(xml) {
-    if (!xml) return '';
-    let content = formatXML(xml).match(/<cwmp:\w+>[^]+(\n\t+)<\/cwmp:\w+>/);
-    if (!content) return;
-    return content[1]+content[0];
-  }
-
-  let simulator = createSimulator(acsUrl, dataModel, serialNumber, macAddr, true)
+  const simulator = createSimulator(acsUrl, dataModel, serialNumber, macAddr, true)
   .on('error', (e) => { // connection or task name errors during cwmp communication.
     console.error(e);
     process.exit(1);
-  // }).on('requested', (request) => {
-  //   console.log(`- [${new Date().toISOString()}] RECEIVED REQUEST FROM ACS.`);
-  // }).on('sent', (request) => {
-  //   console.log(`- [${new Date().toISOString()}] SENT BODY '${formatXML(request.body)}'.`);
-  //   // console.log(`- [${new Date().toISOString()}] SENT BODY '${extractXmlContent(request.body)}'.`);
-  // }).on('response', (response) => {
-  //   console.log(`- [${new Date().toISOString()}] RECEIVED RESPONSE BODY '${formatXML(response.body)}'.`);
-  //   // console.log(`- [${new Date().toISOString()}] RECEIVED RESPONSE BODY '${extractXmlContent(response.body)}'.`);
-  // }).on('task', (task) => {
-  //   console.log(`- [${new Date().toISOString()}] PROCESSED task`, JSON.stringify(task, null, '  '));
-  //  // console.log(`- [${new Date().toISOString()}] PROCESSED task '${task.localName}'.`);
-  // }).on('diagnostic', (name) => {
-  //   console.log(`- [${new Date().toISOString()}] FINISHED diagnostic '${name}'.`);
-  });
-  return simulator.start().catch((e) => { // initialization error.
+  })
+  // .on('requested', (request) => print('RECEIVED REQUEST FROM ACS'))
+  // .on('sent', (request) => printXML('SENT BODY:', request.body))
+  // .on('response', (response) => printXML('RECEIVED RESPONSE BODY:', response.body))
+  // .on('task', (task) => print(`PROCESSED task: ${task.name}.`))
+  // .on('diagnostic', (name) => print(`FINISHED diagnostic: '${name}'.`))
+  // .on('sessionStart', (event) => print(`started SESSION with event: '${event}'.`))
+  // .on('sessionEnd', (event) => print(`finished SESSION for event: '${event}'.`));
+  return simulator.start().catch((e) => { // Catching start error.
     console.error(e);
     process.exit(1);
   });

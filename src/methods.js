@@ -265,7 +265,7 @@ function SetParameterValues(simulator, request) {
   const device = simulator.device;
   let parameterValues = request.children[0].children;
 
-  const modified = {}; // received parameters to be set.
+  const modified = {}; // Received parameters to be read in each diagnostic.
   for (let p of parameterValues) {
     let name, value;
     for (let c of p.children) {
@@ -304,9 +304,13 @@ function AddObject(simulator, request) {
   const deviceId = device.get('DeviceID.ID');
   const model = models[deviceId && deviceId[1]];
 
+  // If model exists in ./models.js and 'objectName' is mapped inside
+  // 'addObject', we execute the function mapped to this 'objectName' and get
+  // the index of the new object created.
   if (model && model.addObject && model.addObject[objectName]) {
     instanceNumber = model.addObject[objectName](simulator, objectName);
   } else {
+  // Original simulator behavior for an AddObject task.
     instanceNumber = 1;
 
     while (device.has(`${objectName}${instanceNumber}.`))
@@ -393,13 +397,13 @@ function Download(simulator, request) {
       res.on("end", async () => {
         body = body.join('');
         
-        // if data is in JSON format containing the new software version,
+        // If data is in JSON format containing the new software version,
         // we update the 'SoftwareVersion' in the model tree.
         let data;
         try {
           data = JSON.parse(body.toString('utf8'));
         } catch (e) {
-          // in case of error, ignore content.
+          // in case of error, ignores content.
           console.log('Error parsing Download body to json.', e)
           console.log('File content:', body)
         }
@@ -407,12 +411,13 @@ function Download(simulator, request) {
         if (data !== undefined && data.constructor === Object && data.version) {
           simulator.device.get(simulator.TR === 'tr098'
             ? 'InternetGatewayDevice.DeviceInfo.SoftwareVersion'
-            : 'Device.DeviceInfo.SoftwareVersion')[1] = data.version;
+            : 'Device.DeviceInfo.SoftwareVersion'
+          )[1] = data.version;
         }
 
         // creating a new session where transfer complete message is sent.
         // waiting 2 seconds before sending pending 'TransferComplete'.
-        setTimeout(() => simulator.runPendingEvents(() => simulator.startSession()), 2000);
+        setTimeout(() => simulator.runPendingActions(() => simulator.startSession()), 2000);
       });
     }).on("error", (err) => {
       faultString = err.message;

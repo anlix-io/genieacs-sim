@@ -1,3 +1,7 @@
+// This file contains fields, field names and values, specific to known CPE
+// models, in order to fill a CPE's tr069 data tree with their model's specific
+// fields and values.
+
 const utils = require('./manipulations_utils')
 
 // validation.

@@ -1,6 +1,8 @@
 const event = '8 DIAGNOSTICS COMPLETE';
 const diagnosticDuration = 2000; // in milliseconds.
 
+// Sets a new session, for the diagnostic complete message, to be started after
+// the simulated diagnostic finishes running.
 async function finish(simulator, name, func, afterMilliseconds, resolve) {
   // reference to object containing this diagnostic's execution data.
   const state = simulator.diagnosticsStates[name];
@@ -11,7 +13,7 @@ async function finish(simulator, name, func, afterMilliseconds, resolve) {
     state.running = undefined; // clearing diagnostic's timeout object.
     state.reject = undefined; // clearing diagnostic's reject function.
 
-    simulator.runPendingEvents(async () => {
+    simulator.runPendingActions(async () => {
       await simulator.startSession(event); // creating a new session where diagnostic complete message is sent.
       resolve(name); // next diagnostic can be executed after calling 'resolve()'.
       simulator.emit('diagnostic', name); // sent diagnostic completion event to ACS and got a response.
@@ -19,11 +21,12 @@ async function finish(simulator, name, func, afterMilliseconds, resolve) {
   }, afterMilliseconds);
 }
 
+// Adds a diagnostic to a queue so it can be started (simulated) after session ends.
 async function queue(simulator, name, func, afterMilliseconds) {
   // When requested, the CPE SHOULD wait until after completion of the communication session
-  // with the ACS before starting the diagnostic.
+  // with the ACS before starting the diagnostic. [[from tr069]].
   simulator.diagnosticQueue.push(() => new Promise((resolve, reject) => {
-    simulator.diagnosticsStates[name].reject = reject; // saving reject so we can interrupt diagnostic.
+    simulator.diagnosticsStates[name].reject = reject; // saving reject so we can interrupt this diagnostic.
     finish(simulator, name, func, afterMilliseconds, resolve);
   }));
 }
@@ -33,19 +36,62 @@ function interrupt(simulator, name) {
   const state = simulator.diagnosticsStates[name];
   clearTimeout(state.running);
   if (state.reject) {
+    // The caller of the diagnostic promise should catch the reject but ignore
+    // the catch because another diagnostic may start after ACS request it.
     state.reject(name);
-    state.reject = undefined;
+    state.reject = undefined; // removing reject after using it.
   }
-  state.running = undefined;
+  state.running = undefined; // removing timeout after clearing it.
 }
 
-const randomMAC = () => "XX:XX:XX:XX:XX:XX".replace(/X/g, () => "0123456789ABCDEF"[Math.random()*16|0]);
-
+// Helper functions.
+// Produces a random MAC Address, in uniform distribution.
+const randomMAC = () => "XX:XX:XX:XX:XX:XX"
+  .replace(/X/g, () => "0123456789ABCDEF"[Math.random()*16|0]);
+// Produces a random integer between given interval, in uniform distribution.
 const randomN = (max, min=1) => Math.floor(Math.random()*(max+1-min))+min;
-
+// Returns a random element from given array, in uniform distribution.
 const getRandomFromArray = (array) => array[Math.random()*array.length|0];
 
 
+/**
+ * A diagnostic is an exported object with the following structure:
+ * const x = {
+ *   path: {tr098: String, tr181: String},
+ *   run: function(simulator, modified),
+ *   results: {
+ *     default: function(simulator),
+ *     error: function(simulator, errorName),
+ *     ...: function(simulator),
+ *   },
+ * }
+ * exports.diag = x;
+ *
+ * The key of the object inside 'exports' is the name of the diagnostic. In the
+ * above example, the diagnostic name is 'diag'
+ *
+ * - 'path' is an object where each value is the path for the root node of the
+ * diagnostics data branch in the tree corresponding to each TR specification.
+ * Currently there are tr069 and tr181, which are selected by the simulator.TR
+ * attribute defined automatically in the simulator constructor.
+ *
+ * - 'run' is a function that received a simulator and the modified fields from
+ * a task and it should check if the modified fields implies the diagnostic
+ * should be started, and if that's true, should set the initial state of the
+ * that diagnostic. The ping diagnostic has instructions taken from tr069 paper.
+ *
+ * - 'results' is object where each value is a function that sets the final
+ * results for that diagnostic. It should always have 2 keys, 'default' and
+ * 'error'. Other keys are allowed too. The selected function is defined by the
+ * key given as the 'result' argument in simulator.setResultForDiagnostic(name,
+ * result). For the 'error' function, the argument 'errorName' is the tree's
+ * DiagnosticsState value to be set which is a string defined by the protocol.
+ *
+ * Helper functions for a diagnostic can be added to the diagnostic structure
+ * and can be called, from inside their own structure, by prefixing the call
+ * with the variable name of the diagnostic structure. In the above example
+ * it's called "x", so a helper function should be called by 'x.helperfunc()'.
+ * */
 const ping = {
   path: {
     tr098: 'InternetGatewayDevice.IPPingDiagnostics.',
@@ -57,7 +103,7 @@ const ping = {
 
     if (modified[path+'DiagnosticsState'] === undefined) {
       // Modifying any of the writable parameters except for 'DiganosticState' MUST result 
-      // in its value being set to "None".
+      // in its value being set to "None". [[from tr069]].
       if (
         modified[path+'Interface'] !== undefined ||
         modified[path+'Host'] !== undefined ||
@@ -66,8 +112,8 @@ const ping = {
         modified[path+'DataBlockSize'] !== undefined ||
         modified[path+'DSCP'] !== undefined
       ) {
-        // While the test is in progress, modifying any of the writable parameters except for
-        // 'DiganosticState' MUST result in the test being terminated and its value being set to "None".
+        // While the test is in progress, modifying any of the writable parameters except for 'DiganosticState'
+        // MUST result in the test being terminated and its value being set to "None". [[from tr069]].
         interrupt(simulator, 'ping');
         simulator.device.get(path+'DiagnosticsState')[1] = 'None';
       }
@@ -80,20 +126,20 @@ const ping = {
     // corresponding diagnostic test. When writing, the only allowed value is Requested. To ensure the
     // use of the proper test parameters (the writable parameters in this object), the test parameters
     // MUST be set either prior to or at the same time as (in the same SetParameterValues) setting the
-    // DiagnosticsState to Requested.
+    // DiagnosticsState to Requested. [[from tr069]].
 
     // While the test is in progress, setting 'DiganosticState' to "Requested" (and possibly modifying
     // other writable parameters in this object) MUST result in the test being terminated and then
-    // restarted using the current values of the test parameters.
+    // restarted using the current values of the test parameters. [[from tr069]].
     interrupt(simulator, 'ping');
 
     // When the test is completed, the value of 'DiganosticState' MUST be either "Complete" or
-    // one of the Error values.
+    // one of the Error values. [[from tr069]].
     // If the value of 'DiganosticState' is anything other than "Complete", the values of the
-    // results parameters for this test are indeterminate.
+    // results parameters for this test are indeterminate. [[from tr069]].
     // When the diagnostic initiated by the ACS is completed (successfully or not), the CPE MUST
     // establish a new connection to the ACS to allow theACS to view the results, indicating the 
-    // Event code "8 DIAGNOSTICS COMPLETE" in the Inform message.
+    // Event code "8 DIAGNOSTICS COMPLETE" in the Inform message. [[from tr069]].
 
     const host = simulator.device.get(path+'Host')[1];
     // checking host.
@@ -104,7 +150,7 @@ const ping = {
       return;
     }
     const interface = (simulator.device.get(path+'Interface') || [,''])[1];
-    const timeout = parseInt((simulator.device.get(path+'Timeout') || [,1000])[1]); // unsignedInt[1:] .
+    const timeout = parseInt((simulator.device.get(path+'Timeout') || [,1000])[1]); // unsignedInt[1:].
     const NumberOfRepetitions = parseInt((simulator.device.get(path+'NumberOfRepetitions') || [,1])[1]); // unsignedInt[1:].
     const dataBlockSize = parseInt((simulator.device.get(path+'DataBlockSize') || [,1])[1]); // unsignedInt[1:65535].
     const dscp = parseInt((simulator.device.get(path+'DSCP') || [,0])[1]); // unsignedInt[0:63].
@@ -113,7 +159,7 @@ const ping = {
       // The value of 'Interface' MUST be either a valid interface or an empty string. An attempt to set that
       // parameter to a different value MUST be rejected as an invalid parameter value. If an empty string is
       // specified, the CPE MUST use the interface as directed by its routing policy (Forwarding table entries)
-      // to determine the appropriate interface.
+      // to determine the appropriate interface. [[from tr069]].
       interface.length > 256 || timeout < 1 || NumberOfRepetitions < 1 || 
       dataBlockSize < 1 || dataBlockSize > 65535 || dscp < 0 || dscp > 63
     ) {
@@ -206,7 +252,8 @@ const traceroute = {
     queue(simulator, 'traceroute', simulator.diagnosticsStates.traceroute.result, diagnosticDuration);
   },
 
-  eraseResult: function(simulator, path) { // erasing old results.
+  // Removes old traceroute results.
+  eraseResult: function(simulator, path) {
     simulator.device.get(path+'RouteHopsNumberOfEntries')[1] = '0';
 
     const fieldSuffix = simulator.TR === 'tr098' ? 'Hop' : '';
@@ -235,18 +282,26 @@ const traceroute = {
 
     delete simulator.device._sortedPaths;
   },
-  produceHopResults: function (simulator, path, forcedMaxHops=false, amoutOfHops=8) {
-    traceroute.eraseResult(simulator, path);
+
+  // Produces hop results given some parameters.
+  // When 'forcedMaxHopsError' is true, the produced result simulates a
+  // traceroute result that have reached the max hops amounts and still haven't
+  // reached the destination address.
+  // 'amoutOfHops' is the amount of hops that will be produced in the result.
+  // 'amoutOfHops' is expected to be smaller than traceroute's 'MaxHopCount'.
+  produceHopResults: function(simulator, path, forcedMaxHopsError=false, amoutOfHops=8) {
+    traceroute.eraseResult(simulator, path); // Erasing previous results.
 
     const maxHops = parseInt(simulator.device.get(path+'MaxHopCount')[1]);
-    const hops = forcedMaxHops ? maxHops : amoutOfHops; // doing max hops or the given amount of hops.
+    const hops = forcedMaxHopsError ? maxHops : amoutOfHops; // doing max hops or the given amount of hops.
 
-    simulator.device.get(path+'DiagnosticsState')[1] = forcedMaxHops ? 'Error_MaxHopCountExceeded' : 'Complete';
-    simulator.device.get(path+'ResponseTime')[1] = forcedMaxHops ? `${((5+2*hops)*1.025).toFixed(3)}` : '3000';
+    // Setting results.
+    simulator.device.get(path+'DiagnosticsState')[1] = forcedMaxHopsError ? 'Error_MaxHopCountExceeded' : 'Complete';
+    simulator.device.get(path+'ResponseTime')[1] = forcedMaxHopsError ? `${((5+2*hops)*1.025).toFixed(3)}` : '3000';
     simulator.device.get(path+'RouteHopsNumberOfEntries')[1] = hops.toString();
 
     const host = simulator.device.get(path+`Host`)[1];
-    const tries = parseInt(simulator.device.get(path+'NumberOfTries')[1]);
+    const tries = parseInt((simulator.device.get(path+'NumberOfTries') || [,0])[1]);
 
     path += 'RouteHops.';
     simulator.device.set(path, [false]); // adding "RouteHops" node to the data model.
@@ -262,7 +317,7 @@ const traceroute = {
       let hopHostAddress = `123.123.${123+hop}.123`;
       // if we are not forcing the max amount of hops in the last iteration, that means 
       // the last iteration has reached the target host.
-      if (!forcedMaxHops && hop === hops) {
+      if (!forcedMaxHopsError && hop === hops) {
         hopHost = host; // we will use the 'Host' attribute as the 'HopHost' value.
         // And if the 'Host' value is an IP address, 'HopHostAddress' will be empty.
         if (hopHost.match(/\d{1,3}(\.\d{1,3}){3}/)) hopHostAddress = '';
@@ -286,7 +341,7 @@ const traceroute = {
   results: {
     default: function(simulator) {
       const path = traceroute.path[simulator.TR];
-      traceroute.produceHopResults(simulator, path, false, 8);
+      traceroute.produceHopResults(simulator, path, false, 8); // Producing 8 hops.
     },
     Error_MaxHopCountExceeded: function(simulator) { // max hop count exceeded error.
       const path = traceroute.path[simulator.TR];
@@ -320,6 +375,7 @@ const sitesurvey = {
     queue(simulator, 'sitesurvey', simulator.diagnosticsStates.sitesurvey.result, diagnosticDuration);
   },
 
+  // Removes old site survey results.
   eraseResult: function (simulator, path) {
     simulator.device.get(path+'ResultNumberOfEntries')[1] = '0';
 
@@ -485,6 +541,7 @@ const speedtest = {
     // object) MUST be retained by the CPE until either this diagnostic is run again, or the CPE reboots.
   },
 
+  // Removes old speed test results.
   eraseResult: function(simulator, path) {
     simulator.device.get(path+'IncrementalResultNumberOfEntries')[1] = '0';
 

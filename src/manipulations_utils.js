@@ -1,3 +1,5 @@
+// Helper functions useful when dealing with the 'simulator.device' Map.
+
 // Adds 'lanDevice' parameters for each of the given 'fields' at the 'path' in the 'simulator' model.
 // If 'lanDevice' doesn't have a parameter, the default value in 'fields' will be used.
 // 'fields' should taken from value of any exported key from file "./models.js".

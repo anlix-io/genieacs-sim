@@ -64,36 +64,70 @@ class InvalidTaskNameError extends Error {
 
 
 class Simulator extends EventEmitter {
-  device; serialNumber; mac; acsUrl; verbose; periodicInformsDisabled;
-  requestOptions; http; httpAgent; basicAuth; server; enabled;
-  onGoingSession; nextInformTimeout; pendingAcsRequest;
-  pendingMessages = [];
-  pendingEvents = [];
-  diagnosticsStates = {}; // state data for available diagnostics.
-  diagnosticQueue = []; // queue for diagnostic waiting to be executed.
-  diagnosticSlots = 1; // only one diagnostic can run in any given time.
+  /**
+   * Simulator, by extending EventEmitter, emits the following events:
+   * 'started' - After it's already listening for connection requests from ACS.
+   * No argument in callback.
+   * 
+   * 'ready': After it has finished its post boot communication with the ACS.
+   * No argument in callback.
+   * 
+   * 'requested'- When it receives a connection request.
+   * No argument in callback.
+   * 
+   * 'sent' - At every request sent to the ACS.
+   * Passes an http.ClientRequest instance as argument in callback.
+   * 
+   * 'response' - At every a response received from the ACS.
+   * Passes an http.IncomingMessage instance as argument in callback.
+   * 
+   * 'error' - When a connection error happens or when a task name is invalid.
+   * Passes an error object as argument in callback.
+   * 
+   * 'task' - After ACS receives confirmation that a task has run.
+   * Passes the task structure as argument in callback.
+   * 
+   * 'diagnostic' - After ACS has been notified that a diganostic has finished.
+   * Passes the name of the finished diagnostic as argument in callback.
+   * 
+   * 'sessionStart' - When a tr069 session is about to start.
+   * Passes the cwmp event string as argument in callback.
+   * 
+   * 'sessionEnd' - After both ACS and CPE send empty strings.
+   * Passes the cwmp event string as argument in callback.
+   * */
 
-  // simulator emits the following events
-  // started: after it's already listening for connection requests from ACS.
-    // no argument.
-  // ready: after it has finished it's post boot communication with the ACS.
-    // no argument.
-  // requested: when it receives a connection request.
-    // no argument.
-  // sent: when it sends a request to the ACS.
-    // event passes an http.ClientRequest instance as argument.
-  // response: when it receives a response from the ACS after sending a request to it.
-    // event passes an http.IncomingMessage instance as argument.
-  // error: when a connection error happens or when a task name is invalid.
-    // event passes an error object.
-  // task: when a task is executed fully executed and responded to ACS
-    // event passes the parsed task structure and a tree of objects;
-  // diagnostic: when a diagnostic is finished ACS has been notified.
-    // event passes the name of the finished diagnostic.
-  // sessionStart: when a session is going to be started with a message to the ACS.
-    // event passes the cwmp event string as argument.
-  // sessionEnd: after both ACS and CPE send empty strings.
-    // event passes the cwmp event string as argument.
+
+  serialNumber; mac; // Simulator identification values.
+  device; // Data structure to hold tr069 data (tr069 tree).
+  acsUrl; // Simulator will send requests to ACS though this url.
+  verbose; // Flag to control legacy print messages of connections received.
+  periodicInformsDisabled; // Flag to disable automatic informs.
+
+  // Attributes used by basic communication between ACS and Simulator.
+  requestOptions; http; httpAgent; basicAuth; server;
+  onGoingSession; // Read only flags that indicates a session is currently running.
+  nextInformTimeout; // Timeout object for the next automatic inform. Or undefined.
+  // Internal flag to indicate the ACS sent a requested during an session.
+  pendingAcsRequest;
+  // Read only flag to inform if the Class instance is running.
+  enabled;
+  // Array of CWMP messages to be sent at the start of the next session.
+  pendingMessages = [];
+  // Array of actions that will run, sequentially, after current session
+  // finishes or, if no sessions is running, right away.
+  pendingActions = [];
+
+  // Diagnostics data. Should not be touched by simulator users./ 
+  // State data for available diagnostics. Each key is the name of an available
+  // diagnostic and each value is state data for the corresponding diagnostic.
+  // Each diagnostic holds the following state data:
+  // - running: Timeout object for the timeout that simulates the diagnostic running in background.
+  // - reject: Promise.reject function to interrupt the simulated diagnostic
+  // - result: Function where the consequences of a diagnostic being run is set.
+  diagnosticsStates = {};
+  diagnosticQueue = []; // Queue for diagnostics waiting to be executed.
+  diagnosticSlots = 1; // Controls the amount diagnostics running in parallel.
 
   constructor(device, serialNumber, mac, acsUrl, verbose, periodicInformsDisabled) {
     super();
@@ -102,23 +136,28 @@ class Simulator extends EventEmitter {
     this.mac = mac;
     this.acsUrl = acsUrl || 'http://127.0.0.1:57547/';
     this.verbose = verbose;
-    this.periodicInformsDisabled = periodicInformsDisabled; // controls sending periodic informs or not.
+    this.periodicInformsDisabled = periodicInformsDisabled;
 
     // defining which cwmp model version this device is using.
     if (this.device.get('InternetGatewayDevice.ManagementServer.URL')) this.TR = 'tr098';
     else if (this.device.get('Device.ManagementServer.URL')) this.TR = 'tr181';
 
+    // Setting initial state of each implemented diagnostic.
     for (let key in diagnostics) {
       this.diagnosticsStates[key] = {}; // initializing diagnostic state attributes.
       this.setResultForDiagnostic(key); // setting default result for diagnostic.
     }
 
+    // In order to have a set of methods from a different module be part of the
+    // Simulator Class, we add each of the modules methods to this instance and
+    // make 'this' be the methods scoped 'this'.
     for (let key in manipulations) {
       this[key] = manipulations[key].bind(this);
     }
   }
 
-  // turns on, off or toggles periodic informs.
+  // Enables of disables periodic informs.
+  // Given 'true' turns on, given 'false' turns off or given 'undefined' toggles.
   setPeriodicInforms(bool) {
     if (bool === undefined) { // toggling value.
       this.periodicInformsDisabled = !this.periodicInformsDisabled;
@@ -126,22 +165,28 @@ class Simulator extends EventEmitter {
       this.periodicInformsDisabled = !bool; // variable name represents a negation.
     }
 
-    if (this.periodicInformsDisabled) { // if on and should be off, clears timeout.
+    if (this.periodicInformsDisabled) { // To disable, clears timeout.
       clearTimeout(this.nextInformTimeout);
       this.nextInformTimeout = undefined;
-    } else if (!this.nextInformTimeout) { // if off and should be on, sets next.
+    } else if (!this.nextInformTimeout) { // To enable, sets next periodic inform.
       this.setNextPeriodicInform();
     }
   }
+  // Toggles periodic informs.
   togglePeriodicInforms = () => setPeriodicInforms();
 
-  // stops running simulator instance in background so it can gracefully shut down.
+  // Stops running simulator instance in background so it can gracefully shut down.
   async shutDown() {
-    for (let key in this.diagnosticsStates) clearTimeout(this.diagnosticsStates[key].running);
+    // Stops each running timeout representing a diagnostic being run.
+    for (let key in this.diagnosticsStates) {
+      clearTimeout(this.diagnosticsStates[key].running);
+    }
+    // Stops the timeout for the next periodic inform
     if (this.nextInformTimeout) {
       clearTimeout(this.nextInformTimeout);
       this.nextInformTimeout = undefined;
     }
+    // Closes the http server.
     if (this.server) {
       await new Promise((resolve) => this.server.close(resolve));
       this.server = undefined;
@@ -149,10 +194,11 @@ class Simulator extends EventEmitter {
     this.enabled = false; // flags this simulator as not working (because javascript don't let us delete objects).
   }
 
-  async start() { // this can throw an error.
+  // Start procedure for a simulator coming online. Can throw an errors.
+  async start() { 
     if (this.server) {
       console.log(`Simulator ${this.serialNumber} already started`);
-      return;
+      return this;
     }
     this.enabled = true; // flags this simulator as a working simulator (because javascript don't let us delete objects).
 
@@ -185,7 +231,7 @@ class Simulator extends EventEmitter {
     this.http = require(this.requestOptions.protocol.slice(0, -1));
     this.httpAgent = new this.http.Agent({keepAlive: true, maxSockets: 1});
 
-    let connectionRequestUrl = await this.listenForConnectionRequests();
+    let connectionRequestUrl = await this.listenForConnectionRequests(); // Can throw error here.
     if (v = this.device.get("InternetGatewayDevice.ManagementServer.ConnectionRequestURL")) v[1] = connectionRequestUrl;
     else if (v = this.device.get("Device.ManagementServer.ConnectionRequestURL")) v[1] = connectionRequestUrl;
 
@@ -193,13 +239,15 @@ class Simulator extends EventEmitter {
     this.emit('started');
 
     await this.startSession();
-    // device has already informed, to ACS, that it is online and has already 
-    // received pending tasks from ACS.
+    // device has already informed, to ACS, that it is online and has already
+    // received pending tasks from ACS and is now waiting for something to do.
     this.emit('ready');
 
-    return this;
+    return this; // returning this Simulator instance.
   }
 
+  // Instances an http(s) server in order to listen for connection
+  // requests coming from the ACS.
   async listenForConnectionRequests() {
     return new Promise((resolve, reject) => {
       let ip, port;
@@ -222,7 +270,6 @@ class Simulator extends EventEmitter {
           if (this.verbose) console.log(`Simulator ${this.serialNumber} got connection request`);
           res.end();
           this.emit('requested');
-          // A session is ongoing when nextInformTimeout === null
           if (this.onGoingSession) {
             this.pendingAcsRequest = true;
           } else {
@@ -240,6 +287,8 @@ class Simulator extends EventEmitter {
     });
   }
 
+  // Backbone for the communication between simulator and ACS.
+  // Starts a session with the ACS and, only after it finishes, executes side jobs.
   async startSession(event="2 PERIODIC") {
     if (!this.enabled) return; // if simulator has been shutdown, ignore new session.
 
@@ -263,10 +312,10 @@ class Simulator extends EventEmitter {
     if (this.pendingAcsRequest) return this.startSession();
 
     this.setNextPeriodicInform(); // sets timeout for next periodic inform.
-    
+
     this.runRequestedDiagnostics(); // executing diagnostic after session has ended.
-    
-    this.runPendingEvents(); // starting sessions that were waiting current session to finish.
+
+    this.runPendingActions(); // starting actions that were waiting current session to finish.
   }
 
   async cpeRequest() {
@@ -321,7 +370,7 @@ class Simulator extends EventEmitter {
           if (Math.floor(response.statusCode / 100) !== 2) {
             let {method, href, headers} = options;
             this.emit('error', new Error(`Unexpected response code ${response.statusCode} with body '${resBody}', `+
-              `on request '${JSON.stringify({method, href, headers})}' and body '${reqBody}'.`));
+              `on request '${JSON.stringify({method, href, headers})}' and body '${xmlUtils.formatXML(reqBody)}'.`));
             return;
           }
 
@@ -448,29 +497,33 @@ class Simulator extends EventEmitter {
     state.result = nextResultFunc;
   }
 
+  // Runs queued diagnostic if possible.
   async runRequestedDiagnostics() {
-    // if diagnostic execution is fully occupied we don't execute anything this round.
+    // if diagnostic execution is fully occupied we don't start anything
+    // because there is a logic flux already inside the loop, running all
+    // diagnostics sequentially.
     if (!this.diagnosticSlots) return;
 
     let diagnostic;
     while (diagnostic = this.diagnosticQueue.shift()) {
       this.diagnosticSlots--; // consuming a diagnostic execution slot.
       await diagnostic()
-        .catch(() => {}); // interrupted diagnostics are rejected.
+        .catch(() => {}); // interrupted diagnostics are ignored.
       this.diagnosticSlots++; // returning a diagnostic execution slot.
     }
   }
 
-  async runPendingEvents(eventFunc) {
-    if (eventFunc) this.pendingEvents.push(eventFunc);
+  // Runs queued promise function if no session is running.
+  async runPendingActions(actionFunc) {
+    if (actionFunc) this.pendingActions.push(actionFunc);
 
-    // if there is an on going session we don't run any pending events and wait the current session
-    // to call this function again.
+    // if there is an on going session we don't run any pending events and wait
+    // the current session to call this function again.
     if (this.onGoingSession) return;
 
-    let pendingEvent;
-    while (pendingEvent = this.pendingEvents.shift()) {
-      await pendingEvent();
+    let pendingAction;
+    while (pendingAction = this.pendingActions.shift()) {
+      await pendingAction();
     }
   }
 }
