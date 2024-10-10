@@ -309,7 +309,7 @@ class Simulator extends EventEmitter {
     this.emit('sessionEnd', event);
     
     // if ACS has sent a request during a session, we start a new session.
-    if (this.pendingAcsRequest) return this.startSession();
+    // if (this.pendingAcsRequest) return this.startSession();
 
     this.setNextPeriodicInform(); // sets timeout for next periodic inform.
 
