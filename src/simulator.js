@@ -464,12 +464,12 @@ class Simulator extends EventEmitter {
     // if periodic inform is disabled, we don't put 'startSession()' in a timeout.
     if (this.periodicInformsDisabled) return;
 
-    let informInterval = 10;
-    let v;
-    if (v = this.device.get("Device.ManagementServer.PeriodicInformInterval"))
-      informInterval = parseInt(v[1]);
-    else if (v = this.device.get("InternetGatewayDevice.ManagementServer.PeriodicInformInterval"))
-      informInterval = parseInt(v[1]);
+    let informInterval = 3;
+    // let v;
+    // if (v = this.device.get("Device.ManagementServer.PeriodicInformInterval"))
+    //   informInterval = parseInt(v[1]);
+    // else if (v = this.device.get("InternetGatewayDevice.ManagementServer.PeriodicInformInterval"))
+    //   informInterval = parseInt(v[1]);
 
     this.nextInformTimeout = setTimeout(this.startSession.bind(this), 1000*informInterval);
   }
