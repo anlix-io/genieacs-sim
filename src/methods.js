@@ -236,15 +236,40 @@ function GetParameterValues(simulator, request) {
   const device = simulator.device;
   let parameterNames = request.children[0].children;
 
-  let params = []
+  let params = [];
+  let parameterCount = 0;
+
   for (let p of parameterNames) {
     let name = p.text;
-    let [_, value, type] = device.get(name);
-    let valueStruct = xmlUtils.node("ParameterValueStruct", {}, [
-      xmlUtils.node("Name", {}, name),
-      xmlUtils.node("Value", { "xsi:type": type }, xmlParser.encodeEntities(value))
-    ]);
-    params.push(valueStruct);
+    
+    // Verifica se o parâmetro é um objeto (terminado em ".")
+    if (name.endsWith(".")) {
+      // Lista todas as folhas sob este objeto
+      const allPaths = getSortedPaths(device);
+      const descendantParams = allPaths.filter(path => {
+        // É descendente se começa com o caminho do objeto e não é um objeto
+        return path.startsWith(name) && !path.endsWith(".");
+      });
+      
+      for (let descendant of descendantParams) {
+        let [_, value, type] = device.get(descendant);
+        let valueStruct = xmlUtils.node("ParameterValueStruct", {}, [
+          xmlUtils.node("Name", {}, descendant),
+          xmlUtils.node("Value", { "xsi:type": type }, xmlParser.encodeEntities(value))
+        ]);
+        params.push(valueStruct);
+        parameterCount++;
+      }
+    } else {
+      // Comportamento original para parâmetros folha
+      let [_, value, type] = device.get(name);
+      let valueStruct = xmlUtils.node("ParameterValueStruct", {}, [
+        xmlUtils.node("Name", {}, name),
+        xmlUtils.node("Value", { "xsi:type": type }, xmlParser.encodeEntities(value))
+      ]);
+      params.push(valueStruct);
+      parameterCount++;
+    }
   }
 
   let response = xmlUtils.node(
@@ -252,7 +277,7 @@ function GetParameterValues(simulator, request) {
     {},
     xmlUtils.node(
       "ParameterList",
-      { "soap-enc:arrayType": "cwmp:ParameterValueStruct[" + parameterNames.length + "]" },
+      { "soap-enc:arrayType": "cwmp:ParameterValueStruct[" + parameterCount + "]" },
       params
     )
   );
